@@ -27,6 +27,9 @@
         <module name="MicroMUSE" />
       </profile>
     </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="MicroMUSE" target="$project-jdk-name$" />
+    </bytecodeTargetLevel>
   </component>
 </project>
 
