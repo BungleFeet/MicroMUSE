@@ -29,6 +29,7 @@
     <orderEntry type="library" name="Maven: org.parboiled:parboiled-scala_2.10:1.1.6" level="project" />
     <orderEntry type="library" name="Maven: org.parboiled:parboiled-core:1.1.6" level="project" />
     <orderEntry type="library" name="Maven: org.neo4j:neo4j-jmx:2.0.1" level="project" />
+    <orderEntry type="library" scope="TEST" name="Maven: org.neo4j:neo4j-kernel:test-jar:tests:2.1.0-M01" level="project" />
     <orderEntry type="library" name="Maven: net.sf.expectit:expectit-core:0.3.0" level="project" />
     <orderEntry type="library" scope="TEST" name="Maven: org.spockframework:spock-core:0.7-groovy-2.0" level="project" />
     <orderEntry type="library" scope="TEST" name="Maven: junit:junit-dep:4.10" level="project" />

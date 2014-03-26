@@ -15,13 +15,21 @@ public class Room {
     private final Long id;
     private final String name;
     private final String description;
-    private final List<String> exits = new ArrayList<String>();
+    private final List<String> exits = new ArrayList<>();
 
     public Room(Long id, String name, String description, List<String> exits) {
         this.id = id;
         this.name = name;
         this.description = description;
-        exits.addAll(exits);
+        this.exits.addAll(exits);
+    }
+
+    public Room(String name, String description, List<String> exits) {
+        this(null, name, description, exits);
+    }
+
+    public Room(String name, String description) {
+        this(null, name, description, new ArrayList<String>());
     }
 
     public Long getId() {
@@ -47,10 +55,8 @@ public class Room {
 
         Room room = (Room) o;
 
-        if (!exits.equals(room.exits)) return false;
-        if (!name.equals(room.name)) return false;
+        return exits.equals(room.exits) && name.equals(room.name);
 
-        return true;
     }
 
     @Override

@@ -1,11 +1,7 @@
 package net.lazygun.micromuse;
 
-import org.neo4j.graphalgo.GraphAlgoFactory;
-import org.neo4j.graphalgo.PathFinder;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.*;
-import org.neo4j.graphdb.traversal.Traverser;
-import org.neo4j.tooling.GlobalGraphOperations;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -19,25 +15,25 @@ import java.util.List;
  */
 public class Neo4JMuseMap implements MuseMap {
 
-    private static final Label ROOM = new Label() {
+    public static final Label ROOM = new Label() {
         @Override
         public String name() {
             return "ROOM";
         }
     };
-    private static final Label UNEXPLORED = new Label() {
+    public static final Label UNEXPLORED = new Label() {
         @Override
         public String name() {
             return "UNEXPLORED";
         }
     };
-    private static final Label TELEPORTABLE = new Label() {
+    public static final Label TELEPORTABLE = new Label() {
         @Override
         public String name() {
             return "TELEPORTABLE";
         }
     };
-    private static enum RelTypes implements RelationshipType { EXIT }
+    public static enum RelTypes implements RelationshipType { EXIT }
 
     private final GraphDatabaseService graphDb;
     private final TraversalDescription unexploredRoomNodeFinder;
@@ -50,17 +46,38 @@ public class Neo4JMuseMap implements MuseMap {
                 .evaluator(new Evaluator() {
                     @Override
                     public Evaluation evaluate(Path path) {
-                        return path.endNode().hasLabel(UNEXPLORED)
-                                ? Evaluation.INCLUDE_AND_PRUNE
-                                : Evaluation.EXCLUDE_AND_CONTINUE;
+                        if (path.length() == 0) {
+                            return path.endNode().getRelationships(Direction.OUTGOING).iterator().hasNext()
+                                    ? Evaluation.EXCLUDE_AND_CONTINUE
+                                    : Evaluation.INCLUDE_AND_PRUNE;
+                        }
+                        for (Relationship rel : path.endNode().getRelationships(Direction.OUTGOING)) {
+                            if (rel.getEndNode().getId() != path.lastRelationship().getStartNode().getId()) {
+                                return Evaluation.EXCLUDE_AND_CONTINUE;
+                            }
+                        }
+                        return Evaluation.INCLUDE_AND_PRUNE;
                     }
                 });
+    }
+
+    public TraversalDescription getUnexploredRoomNodeFinder() {
+        return unexploredRoomNodeFinder;
+    }
+
+    @Override
+    public Room getHome() {
+        try (Transaction tx = graphDb.beginTx()) {
+            Room room = nodeToRoom(graphDb.getNodeById(0));
+            tx.success();
+            return room;
+        }
     }
 
     @Override
     public Link createLink(Link link) {
         try (Transaction tx = graphDb.beginTx()) {
-            Node from = findRoomNode(link.from());
+            Node from = getNode(link.from());
             Relationship exit = null;
             for (Relationship rel : from.getRelationships(RelTypes.EXIT, Direction.OUTGOING)) {
                 if (rel.getProperty("name").equals(link.exit())) {
@@ -90,8 +107,8 @@ public class Neo4JMuseMap implements MuseMap {
 
     @Override
     public Route findUnexploredRoom(Room nearestTo) {
-        try (Transaction tx = graphDb.beginTx();
-             ResourceIterator<Path> unexploredNodePaths = unexploredRoomNodeFinder.traverse(findRoomNode(nearestTo)).iterator()) {
+        try (Transaction ignored = graphDb.beginTx();
+             ResourceIterator<Path> unexploredNodePaths = unexploredRoomNodeFinder.traverse(getNode(nearestTo)).iterator()) {
             Path shortestPath = null;
             while (unexploredNodePaths.hasNext()) {
                 Path path = unexploredNodePaths.next();
@@ -134,7 +151,7 @@ public class Neo4JMuseMap implements MuseMap {
         return exit;
     }
 
-    private Room nodeToRoom(Node roomNode) {
+    public Room nodeToRoom(Node roomNode) {
         Long id = roomNode.getId();
         String name = (String) roomNode.getProperty("name");
         String description = (String) roomNode.getProperty("description");
@@ -157,17 +174,17 @@ public class Neo4JMuseMap implements MuseMap {
     }
 
     private Label[] roomLabels(Room room) {
-        List<Label> labels = new ArrayList<Label>();
+        List<Label> labels = new ArrayList<>();
         labels.add(ROOM);
         if (room instanceof UnexploredRoom) {
             labels.add(UNEXPLORED);
         } else if (room instanceof Teleportable) {
             labels.add(TELEPORTABLE);
         }
-        return labels.toArray(new Label[]{});
+        return labels.toArray(new Label[labels.size()]);
     }
 
-    private Node findRoomNode(Room room) {
+    public Node getNode(Room room) {
         if (room.getId() != null) {
             return graphDb.getNodeById(room.getId());
         } else  {
