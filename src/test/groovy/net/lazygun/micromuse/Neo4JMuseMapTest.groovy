@@ -8,7 +8,6 @@ import org.neo4j.graphdb.Transaction
 import org.neo4j.graphdb.Node
 import org.neo4j.graphdb.traversal.Evaluators
 import org.neo4j.graphdb.traversal.TraversalDescription
-import org.neo4j.graphdb.traversal.Traverser
 import org.neo4j.graphdb.traversal.Uniqueness
 import org.neo4j.test.TestGraphDatabaseFactory
 import org.neo4j.tooling.GlobalGraphOperations
@@ -108,11 +107,11 @@ class Neo4JMuseMapTest extends Specification {
     createHomeNode()
     createLinksTraversalDescription()
 
-    printMap("Starting graph:")
+    printMap("Map before test:")
   }
 
   def cleanup() {
-    printMap("Finishing graph:")
+    printMap("\nMap after test:")
     tx.close()
     graphDb.shutdown()
   }

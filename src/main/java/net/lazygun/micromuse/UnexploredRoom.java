@@ -1,7 +1,6 @@
 package net.lazygun.micromuse;
 
 import java.util.ArrayList;
-import java.util.List;
 
 /**
  * TODO: Write Javadocs for this class.
@@ -13,11 +12,13 @@ public class UnexploredRoom extends Room {
 
     public static final String NAME = "UNEXPLORED ROOM";
 
-    public UnexploredRoom(Long id) {
-        super(id, NAME, "", new ArrayList<String>());
+    private static final UnexploredRoom INSTANCE = new UnexploredRoom(null);
+
+    public static UnexploredRoom getInstance() {
+        return INSTANCE;
     }
 
-    public UnexploredRoom() {
-        this(null);
+    public UnexploredRoom(Long id) {
+        super(id, NAME, "", new ArrayList<String>());
     }
 }

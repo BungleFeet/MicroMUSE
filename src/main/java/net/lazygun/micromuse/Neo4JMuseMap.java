@@ -67,7 +67,7 @@ public class Neo4JMuseMap implements MuseMap {
     public Link createLink(Link link) {
         System.out.println("Creating link (" + link.from().getName() +")-[" + link.exit() + "]->(" + link.to().getName() + ")");
         try (Transaction tx = graphDb.beginTx()) {
-            Node from = getNode(link.from());
+            Node from = findNode(link.from());
             Relationship exit = null;
             for (Relationship rel : from.getRelationships(RelTypes.EXIT, Direction.OUTGOING)) {
                 if (rel.getProperty("name").equals(link.exit())) {
@@ -81,8 +81,10 @@ public class Neo4JMuseMap implements MuseMap {
             if (to.hasLabel(UNEXPLORED)) {
                 exit.delete();
                 to.delete();
-                // TODO: Find existing room by: (1) look for id; (2) Look for location; (3) Look for name + exits
-                to = link.to().getId() == null ? saveRoom(link.to()) : getNode(link.to()) ;
+                to = findNode(link.to());
+                if (to == null) {
+                    to = saveRoom(link.to());
+                }
                 createExitRelationship(from, to, link.exit());
             }
             else {
@@ -99,7 +101,7 @@ public class Neo4JMuseMap implements MuseMap {
     @Override
     public Route findUnexploredRoom(Room nearestTo) {
         try (Transaction ignored = graphDb.beginTx();
-             ResourceIterator<Path> unexploredNodePaths = unexploredRoomNodeFinder.traverse(getNode(nearestTo)).iterator()) {
+             ResourceIterator<Path> unexploredNodePaths = unexploredRoomNodeFinder.traverse(findNode(nearestTo)).iterator()) {
             Path shortestPath = null;
             while (unexploredNodePaths.hasNext()) {
                 Path path = unexploredNodePaths.next();
@@ -175,11 +177,56 @@ public class Neo4JMuseMap implements MuseMap {
         return labels.toArray(new Label[labels.size()]);
     }
 
-    public Node getNode(Room room) {
+    public Node findNode(final Room room) {
+        // If room has an Id, use that to load the node
         if (room.getId() != null) {
             return graphDb.getNodeById(room.getId());
-        } else  {
-            throw new IllegalArgumentException("Cannot find Room without Id");
+        }
+
+        // Otherwise, if room is teleportable, use the location (which should be unique) to find the node
+        else if (room instanceof Teleportable)  {
+            String location = ((Teleportable) room).getLocation();
+            try (ResourceIterator<Node> matches = graphDb.findNodesByLabelAndProperty(TELEPORTABLE, "location", location).iterator()) {
+                if (matches.hasNext()) {
+                    Node match = matches.next();
+                    if (matches.hasNext()) {
+                        throw new IllegalStateException("Found more than one Node with location " + location);
+                    }
+                    return match;
+                }
+                return null;
+            }
+        }
+
+        // Otherwise, try to find a ROOM node with the same name, and same exit relationships.
+        else {
+            String name = room.getName();
+            TraversalDescription roomMatcher = graphDb.traversalDescription().breadthFirst().evaluator(new Evaluator() {
+                @Override
+                public Evaluation evaluate(Path path) {
+                    List<String> exitsToMatch = new ArrayList<>(room.getExits());
+                    Iterable<Relationship> relationships =
+                            path.startNode().getRelationships(RelTypes.EXIT, Direction.OUTGOING);
+                    for (Relationship rel : relationships) {
+                        if (!exitsToMatch.remove(rel.getProperty("name").toString())) {
+                            return Evaluation.EXCLUDE_AND_PRUNE;
+                        }
+                    }
+                    return exitsToMatch.size() == 0 ? Evaluation.INCLUDE_AND_PRUNE
+                                                    : Evaluation.EXCLUDE_AND_PRUNE;
+                }
+            });
+            List<Node> matches = new ArrayList<>();
+            try (ResourceIterator<Node> matcher = graphDb.findNodesByLabelAndProperty(ROOM, "name", name).iterator()) {
+                while (matcher.hasNext()) {
+                    matches.addAll(resourceIterableToList(roomMatcher.traverse(matcher.next()).nodes()));
+                }
+            }
+            switch (matches.size()) {
+                case 0: return null;
+                case 1: return matches.get(0);
+                default: throw new IllegalStateException("Found " + matches.size() + " Node matching Room " + room);
+            }
         }
     }
 
@@ -189,12 +236,22 @@ public class Neo4JMuseMap implements MuseMap {
             roomNode.setProperty("name", room.getName());
             roomNode.setProperty("description", room.getDescription());
             for (String exit : room.getExits()) {
-                Node unexplored = saveRoom(new UnexploredRoom());
+                Node unexplored = saveRoom(UnexploredRoom.getInstance());
                 createExitRelationship(roomNode, unexplored, exit);
             }
             return roomNode;
         } else {
             throw new IllegalArgumentException("Cannot create Node from Room with existing Id");
+        }
+    }
+
+    private <T> List<T> resourceIterableToList(ResourceIterable<T> iterable) {
+        try (ResourceIterator<T> iterator = iterable.iterator()) {
+            List<T> list = new ArrayList<>();
+            while (iterator.hasNext()) {
+                list.add(iterator.next());
+            }
+            return list;
         }
     }
 }
