@@ -1,18 +1,17 @@
 package net.lazygun.micromuse
 
 import org.neo4j.cypher.javacompat.ExecutionEngine
-import org.neo4j.graphdb.Direction
 import org.neo4j.graphdb.GraphDatabaseService
-import org.neo4j.graphdb.Path
+import org.neo4j.graphdb.PropertyContainer
 import org.neo4j.graphdb.Relationship
 import org.neo4j.graphdb.Transaction
 import org.neo4j.graphdb.Node
-import org.neo4j.graphdb.traversal.Evaluation
-import org.neo4j.graphdb.traversal.Evaluator
 import org.neo4j.graphdb.traversal.Evaluators
+import org.neo4j.graphdb.traversal.TraversalDescription
 import org.neo4j.graphdb.traversal.Traverser
 import org.neo4j.graphdb.traversal.Uniqueness
 import org.neo4j.test.TestGraphDatabaseFactory
+import org.neo4j.tooling.GlobalGraphOperations
 import spock.lang.Specification
 
 import static net.lazygun.micromuse.Neo4JMuseMap.ROOM
@@ -28,50 +27,86 @@ import static org.neo4j.graphdb.Direction.OUTGOING
 class Neo4JMuseMapTest extends Specification {
 
   GraphDatabaseService graphDb
+  GlobalGraphOperations globalGraphOperations
   Neo4JMuseMap map
   ExecutionEngine cypher
   Transaction tx
-  Traverser traverser
+  Node home
+  TraversalDescription traverser
 
   List<String> homeExits = ('A'..'C').toList()
 
+  def "replace unexplored room with regular room"() {
+    given: 'a new room to be saved'
+    def room = new Room("Room A", "Test room A", ('1'..'3').toList())
+
+    when: 'the new room is linked to from the home room via the first exit'
+    def link = new Link(map.home, homeExits[0], room)
+    link = map.createLink(link)
+
+    then: 'the new room has been saved'
+    link.to().id != null
+    def roomNode = graphDb.getNodeById(link.to().id)
+    roomNode.name == "Room A"
+
+    and: 'the new room has the correct exits linking to and from it'
+    def incoming =  roomNode.getRelationships(INCOMING).toList()
+    def outgoing = roomNode.getRelationships(OUTGOING).toList()
+    incoming.size() == 1
+    outgoing.size() == 3
+    incoming[0].name == homeExits[0]
+    outgoing.name.sort() == room.exits
+
+    and: 'the new room is linked to the correct rooms'
+    incoming[0].startNode.id == home.id
+    outgoing.every { it.endNode.name == UnexploredRoom.NAME }
+  }
+
+  def "create a link back to home room"() {
+    given: 'a new room, linked to the home room from its first exit'
+    def room = new Room("Room A", "Test room A", ('1'..'3').toList())
+    def link = map.createLink(new Link(map.home, homeExits[0], room))
+    room = link.to()
+
+    when: 'the new room is linked back to the home room via exit "1"'
+    def homeLink = new Link(room, '1', new Room(map.home.name, map.home.description, map.home.exits))
+    homeLink = map.createLink(homeLink)
+
+    then: 'the new link connects back to home'
+    homeLink.to().id == home.id
+
+    and: 'the new room has the correct exits linking to and from it'
+    def roomNode = graphDb.getNodeById(link.to().id)
+    def incoming =  roomNode.getRelationships(INCOMING).toList()
+    def outgoing = roomNode.getRelationships(OUTGOING).toList()
+    incoming.size() == 1
+    outgoing.size() == 3
+    incoming[0].name == homeExits[0]
+    outgoing.name.sort() == room.exits
+
+    and: 'the new room is linked to the correct rooms'
+    incoming[0].startNode.id == home.id
+    def homeRel = outgoing.find { it.endNode.id == home.id }
+    homeRel != null
+    (outgoing - homeRel).every { it.endNode.name == UnexploredRoom.NAME }
+  }
+
+  def setupSpec() {
+    PropertyContainer.metaClass  {
+      propertyMissing { String name -> delegate.getProperty(name)}
+      propertyMissing { String name, val -> delegate.setProperty(name, val)}
+    }
+  }
+
   def setup() {
     graphDb = new TestGraphDatabaseFactory().newImpermanentDatabase()
+    globalGraphOperations = GlobalGraphOperations.at(graphDb)
     map = new Neo4JMuseMap(graphDb)
     cypher = new ExecutionEngine(graphDb)
     tx = graphDb.beginTx()
-
-    def homeNode = graphDb.createNode(ROOM, TELEPORTABLE)
-    homeNode.setProperty("name", "Home")
-    homeNode.setProperty("location", "#0")
-    homeNode.setProperty("description", "")
-    homeExits.each { exit ->
-      def unexploredNode = graphDb.createNode(ROOM, UNEXPLORED)
-      unexploredNode.setProperty("name", UnexploredRoom.NAME)
-      def rel = homeNode.createRelationshipTo(unexploredNode, EXIT)
-      rel.setProperty("name", exit)
-      unexploredNode
-    }
-    assert map.home.id == 0
-
-    traverser = graphDb.traversalDescription()
-      .breadthFirst()
-      .relationships(EXIT, OUTGOING)
-      .uniqueness(Uniqueness.NODE_PATH)
-      .evaluator([evaluate: { path ->
-        if (path.length() == 0) {
-          return path.endNode().getRelationships(OUTGOING).iterator().hasNext() ?
-            Evaluation.EXCLUDE_AND_CONTINUE :
-            Evaluation.INCLUDE_AND_PRUNE;
-        }
-        for (Relationship rel : path.endNode().getRelationships(OUTGOING)) {
-          if (rel.getEndNode().getId() != path.lastRelationship().getStartNode().getId()) {
-            return Evaluation.EXCLUDE_AND_CONTINUE;
-          }
-        }
-        return Evaluation.INCLUDE_AND_PRUNE;
-      }] as Evaluator)
-      .traverse(homeNode)
+    
+    createHomeNode()
+    createLinksTraversalDescription()
 
     printMap("Starting graph:")
   }
@@ -81,36 +116,48 @@ class Neo4JMuseMapTest extends Specification {
     tx.close()
     graphDb.shutdown()
   }
-
-  def "replace unexplored room with regular room"() {
-    given:
-    def room = new Room("Room A", "Test room A", ('1'..'3').toList())
-    def link = new Link(map.home, homeExits[0], room)
-    when:
-    map.createLink(link)
-    then:
-    def result = cypher.execute("start n=node(0) match n-[e:EXIT]->(m) where e.name='${homeExits[0]}' return m").toList()
-    result.size() == 1
-    Node roomNode = result[0].m
-    roomNode.getProperty("name") == "Room A"
-    roomNode.getRelationships(INCOMING).toList().size() == 1
-    roomNode.getRelationships(OUTGOING).toList().size() == 3
+  
+  void createHomeNode() {
+    home = graphDb.createNode(ROOM, TELEPORTABLE)
+    home.name = "Home"
+    home.location = "#0"
+    home.description = ""
+    homeExits.each { exit ->
+      def unexploredNode = graphDb.createNode(ROOM, UNEXPLORED)
+      unexploredNode.name = UnexploredRoom.NAME
+      def rel = home.createRelationshipTo(unexploredNode, EXIT)
+      rel.name = exit
+      unexploredNode
+    }
+    assert map.home.id == 0
   }
 
-  void printMap(title) {
+  void createLinksTraversalDescription() {
+    traverser = graphDb.traversalDescription()
+      .breadthFirst()
+      .relationships(EXIT, OUTGOING)
+      .uniqueness(Uniqueness.NODE_PATH)
+      .evaluator(Evaluators.includingDepths(1, 1))
+  }
+
+  void printMap(title, includeLabels = false) {
     println(title)
-    traverser.iterator().toList().each { p ->
-      p.each { e ->
-        switch (e) {
-          case Node:
-            print "(${e.getProperty('name')})"
-            break
-          case Relationship:
-            print "-[${e.getProperty('name')}]->"
+    traverser
+      .traverse(GlobalGraphOperations.at(graphDb).getAllNodesWithLabel(ROOM).iterator().toList().toArray() as Node[])
+      .iterator().toList().each { p ->
+        p.each { PropertyContainer e ->
+          switch (e) {
+            case Node:
+              includeLabels ?
+                print("($e.name {${e.getLabels().join(',')}})") :
+                print("($e.name)")
+              break
+            case Relationship:
+              print "-[$e.name]->"
+          }
         }
+        println ""
       }
-      println ""
-    }
     println ""
   }
 }

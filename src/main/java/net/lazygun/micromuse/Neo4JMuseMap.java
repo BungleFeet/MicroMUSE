@@ -65,6 +65,7 @@ public class Neo4JMuseMap implements MuseMap {
 
     @Override
     public Link createLink(Link link) {
+        System.out.println("Creating link (" + link.from().getName() +")-[" + link.exit() + "]->(" + link.to().getName() + ")");
         try (Transaction tx = graphDb.beginTx()) {
             Node from = getNode(link.from());
             Relationship exit = null;
@@ -80,7 +81,8 @@ public class Neo4JMuseMap implements MuseMap {
             if (to.hasLabel(UNEXPLORED)) {
                 exit.delete();
                 to.delete();
-                to = saveRoom(link.to());
+                // TODO: Find existing room by: (1) look for id; (2) Look for location; (3) Look for name + exits
+                to = link.to().getId() == null ? saveRoom(link.to()) : getNode(link.to()) ;
                 createExitRelationship(from, to, link.exit());
             }
             else {
