@@ -7,7 +7,11 @@ import org.neo4j.graphdb.Path
 import org.neo4j.graphdb.Relationship
 import org.neo4j.graphdb.Transaction
 import org.neo4j.graphdb.Node
+import org.neo4j.graphdb.traversal.Evaluation
+import org.neo4j.graphdb.traversal.Evaluator
 import org.neo4j.graphdb.traversal.Evaluators
+import org.neo4j.graphdb.traversal.Traverser
+import org.neo4j.graphdb.traversal.Uniqueness
 import org.neo4j.test.TestGraphDatabaseFactory
 import spock.lang.Specification
 
@@ -27,6 +31,7 @@ class Neo4JMuseMapTest extends Specification {
   Neo4JMuseMap map
   ExecutionEngine cypher
   Transaction tx
+  Traverser traverser
 
   List<String> homeExits = ('A'..'C').toList()
 
@@ -35,6 +40,7 @@ class Neo4JMuseMapTest extends Specification {
     map = new Neo4JMuseMap(graphDb)
     cypher = new ExecutionEngine(graphDb)
     tx = graphDb.beginTx()
+
     def homeNode = graphDb.createNode(ROOM, TELEPORTABLE)
     homeNode.setProperty("name", "Home")
     homeNode.setProperty("location", "#0")
@@ -47,13 +53,31 @@ class Neo4JMuseMapTest extends Specification {
       unexploredNode
     }
     assert map.home.id == 0
-    println "Starting graph:"
-    printMap()
+
+    traverser = graphDb.traversalDescription()
+      .breadthFirst()
+      .relationships(EXIT, OUTGOING)
+      .uniqueness(Uniqueness.NODE_PATH)
+      .evaluator([evaluate: { path ->
+        if (path.length() == 0) {
+          return path.endNode().getRelationships(OUTGOING).iterator().hasNext() ?
+            Evaluation.EXCLUDE_AND_CONTINUE :
+            Evaluation.INCLUDE_AND_PRUNE;
+        }
+        for (Relationship rel : path.endNode().getRelationships(OUTGOING)) {
+          if (rel.getEndNode().getId() != path.lastRelationship().getStartNode().getId()) {
+            return Evaluation.EXCLUDE_AND_CONTINUE;
+          }
+        }
+        return Evaluation.INCLUDE_AND_PRUNE;
+      }] as Evaluator)
+      .traverse(homeNode)
+
+    printMap("Starting graph:")
   }
 
   def cleanup() {
-    println "Finishing graph:"
-    printMap()
+    printMap("Finishing graph:")
     tx.close()
     graphDb.shutdown()
   }
@@ -73,10 +97,9 @@ class Neo4JMuseMapTest extends Specification {
     roomNode.getRelationships(OUTGOING).toList().size() == 3
   }
 
-  void printMap() {
-    map.unexploredRoomNodeFinder
-      .traverse(graphDb.getNodeById(0))
-      .iterator().toList().each { p ->
+  void printMap(title) {
+    println(title)
+    traverser.iterator().toList().each { p ->
       p.each { e ->
         switch (e) {
           case Node:

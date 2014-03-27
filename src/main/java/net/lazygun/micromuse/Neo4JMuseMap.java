@@ -43,26 +43,15 @@ public class Neo4JMuseMap implements MuseMap {
         unexploredRoomNodeFinder = graphDb.traversalDescription()
                 .breadthFirst()
                 .relationships(RelTypes.EXIT, Direction.OUTGOING)
+                .uniqueness(Uniqueness.NODE_PATH)
                 .evaluator(new Evaluator() {
                     @Override
                     public Evaluation evaluate(Path path) {
-                        if (path.length() == 0) {
-                            return path.endNode().getRelationships(Direction.OUTGOING).iterator().hasNext()
-                                    ? Evaluation.EXCLUDE_AND_CONTINUE
-                                    : Evaluation.INCLUDE_AND_PRUNE;
-                        }
-                        for (Relationship rel : path.endNode().getRelationships(Direction.OUTGOING)) {
-                            if (rel.getEndNode().getId() != path.lastRelationship().getStartNode().getId()) {
-                                return Evaluation.EXCLUDE_AND_CONTINUE;
-                            }
-                        }
-                        return Evaluation.INCLUDE_AND_PRUNE;
+                        return path.endNode().hasLabel(UNEXPLORED)
+                                ? Evaluation.INCLUDE_AND_PRUNE
+                                : Evaluation.EXCLUDE_AND_CONTINUE;
                     }
                 });
-    }
-
-    public TraversalDescription getUnexploredRoomNodeFinder() {
-        return unexploredRoomNodeFinder;
     }
 
     @Override
