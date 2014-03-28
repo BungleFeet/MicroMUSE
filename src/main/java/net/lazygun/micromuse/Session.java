@@ -14,6 +14,6 @@ public interface Session extends Closeable {
     public static final Integer PORT = 4201;
 
     Room getCurrentRoom();
-    Room teleport(TeleportableRoom destination);
+    Room teleport(Room destination);
     Room exit(String exit);
 }

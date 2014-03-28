@@ -1,5 +1,6 @@
 package net.lazygun.micromuse;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.ArrayList;
@@ -12,32 +13,30 @@ import java.util.ArrayList;
  */
 public class Room {
 
-    private final Long id;
+    public static final Room UNEXPLORED = new Room("UNEXPLORED", null, "");
+
     private final String name;
+    private final String location;
     private final String description;
     private final List<String> exits = new ArrayList<>();
 
-    public Room(Long id, String name, String description, List<String> exits) {
-        this.id = id;
-        this.name = name;
-        this.description = description;
+    public Room(String name, String location, String description, Collection<String> exits) {
+        this(name, location, description);
         this.exits.addAll(exits);
     }
 
-    public Room(String name, String description, List<String> exits) {
-        this(null, name, description, exits);
-    }
-
-    public Room(String name, String description) {
-        this(null, name, description, new ArrayList<String>());
-    }
-
-    public Long getId() {
-        return id;
+    public Room(String name, String location, String description) {
+        this.name = name;
+        this.location = location;
+        this.description = description;
     }
 
     public String getName() {
         return name;
+    }
+
+    public String getLocation() {
+        return location;
     }
 
     public String getDescription() {
@@ -48,20 +47,42 @@ public class Room {
         return Collections.unmodifiableList(exits);
     }
 
+    public boolean isTeleportable() {
+        return location != null && !location.isEmpty();
+    }
+
+    public boolean isUnexplored() {
+        return name.equals(UNEXPLORED.getName());
+    }
+
+    public Room link(String exit, Room to) {
+        throw new UnsupportedOperationException("Not implemented");
+    }
+
+    public Route findNearestUnexplored() {
+        throw new UnsupportedOperationException("Not implemented");
+    }
+
+    public Room exit(String exit) {
+        throw new UnsupportedOperationException("Not implemented");
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (!(o instanceof Room)) return false;
 
-        Room room = (Room) o;
+        final Room room = (Room) o;
 
-        return exits.equals(room.exits) && name.equals(room.name);
+        return exits.equals(room.exits) && !(location != null ? !location.equals(room.location)
+                                                              : room.location != null) && name.equals(room.name);
 
     }
 
     @Override
     public int hashCode() {
         int result = name.hashCode();
+        result = 31 * result + (location != null ? location.hashCode() : 0);
         result = 31 * result + exits.hashCode();
         return result;
     }

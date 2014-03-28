@@ -8,6 +8,4 @@ package net.lazygun.micromuse;
  */
 public interface MuseMap {
     public Room getHome();
-    public Link createLink(Link link);
-    public Route findUnexploredRoom(Room nearestTo);
 }

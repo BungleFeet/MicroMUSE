@@ -1,5 +1,6 @@
 package net.lazygun.micromuse;
 
+import net.lazygun.micromuse.neo4j.RoomNode;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.factory.GraphDatabaseFactory;
 
@@ -21,23 +22,22 @@ public class Crawler {
                 db.shutdown();
             }
         });
+        RoomNode.initialise(db);
     }
 
     private final Navigator navigator;
-    private final MuseMap museMap;
 
-    public Crawler(Navigator navigator, MuseMap museMap) {
+    public Crawler(Navigator navigator) {
         this.navigator = navigator;
-        this.museMap = museMap;
     }
 
     public void run() {
-        for (Route route = museMap.findUnexploredRoom(navigator.currentRoom());
-             route != null;
-             route = museMap.findUnexploredRoom(navigator.currentRoom())) {
+        Room room = RoomNode.load(navigator.currentRoom());
+        Route route;
+        while ((route = room.findNearestUnexplored()) != null) {
             try {
                 Link lastStep = navigator.traverse(route);
-                museMap.createLink(lastStep);
+                room = room.link(lastStep.exit(), lastStep.to());
             } catch (LinkAlreadyExistsException ex) {
                 // Another crawler must have followed this exit first.
                 // Go back to previous room and look for another unexplored room.

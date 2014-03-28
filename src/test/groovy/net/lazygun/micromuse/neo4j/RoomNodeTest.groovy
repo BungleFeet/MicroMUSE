@@ -1,5 +1,7 @@
-package net.lazygun.micromuse
+package net.lazygun.micromuse.neo4j
 
+import net.lazygun.micromuse.Link
+import net.lazygun.micromuse.Room
 import org.neo4j.cypher.javacompat.ExecutionEngine
 import org.neo4j.graphdb.GraphDatabaseService
 import org.neo4j.graphdb.PropertyContainer
@@ -13,81 +15,71 @@ import org.neo4j.test.TestGraphDatabaseFactory
 import org.neo4j.tooling.GlobalGraphOperations
 import spock.lang.Specification
 
-import static net.lazygun.micromuse.Neo4JMuseMap.ROOM
-import static net.lazygun.micromuse.Neo4JMuseMap.RelTypes.EXIT
-import static net.lazygun.micromuse.Neo4JMuseMap.TELEPORTABLE
-import static net.lazygun.micromuse.Neo4JMuseMap.UNEXPLORED
+import static net.lazygun.micromuse.neo4j.RoomNode.ROOM
+import static net.lazygun.micromuse.neo4j.RoomNode.Relation.EXIT
 import static org.neo4j.graphdb.Direction.INCOMING
 import static org.neo4j.graphdb.Direction.OUTGOING
 
 /**
  * Created by ewan on 26/03/2014.
  */
-class Neo4JMuseMapTest extends Specification {
+class RoomNodeTest extends Specification {
 
   GraphDatabaseService graphDb
   GlobalGraphOperations globalGraphOperations
-  Neo4JMuseMap map
   ExecutionEngine cypher
   Transaction tx
-  Node home
+  Room home
   TraversalDescription traverser
 
-  List<String> homeExits = ('A'..'C').toList()
-
   def "replace unexplored room with regular room"() {
-    given: 'a new room to be saved'
-    def room = new Room("Room A", "Test room A", ('1'..'3').toList())
+    given: 'a home room and a new room to be saved'
+      def home = createHomeNode(["A"])
+      def room = new Room("Room A", null, "Test room A", ['A', 'B', 'C'])
 
     when: 'the new room is linked to from the home room via the first exit'
-    def link = new Link(map.home, homeExits[0], room)
-    link = map.createLink(link)
+      room = home.link("A", room)
 
     then: 'the new room has been saved'
-    link.to().id != null
-    def roomNode = graphDb.getNodeById(link.to().id)
-    roomNode.name == "Room A"
+      room.id != null
 
     and: 'the new room has the correct exits linking to and from it'
-    def incoming =  roomNode.getRelationships(INCOMING).toList()
-    def outgoing = roomNode.getRelationships(OUTGOING).toList()
-    incoming.size() == 1
-    outgoing.size() == 3
-    incoming[0].name == homeExits[0]
-    outgoing.name.sort() == room.exits
+      def incoming = room.getRelationships(INCOMING).toList()
+      def outgoing = room.getRelationships(OUTGOING).toList()
+      incoming.size() == 1
+      outgoing.size() == 3
+      incoming[0].name == 'A'
+      outgoing.name.sort() == room.exits
 
     and: 'the new room is linked to the correct rooms'
-    incoming[0].startNode.id == home.id
-    outgoing.every { it.endNode.name == UnexploredRoom.NAME }
+      incoming[0].startNode.id == home.id
+      outgoing.every { it.endNode.name == Room.UNEXPLORED.name }
   }
 
   def "create a link back to home room"() {
     given: 'a new room, linked to the home room from its first exit'
-    def room = new Room("Room A", "Test room A", ('1'..'3').toList())
-    def link = map.createLink(new Link(map.home, homeExits[0], room))
-    room = link.to()
+      def home = createHomeNode(['A'])
+      def room = home.link("A", new Room("Room A", null, "Test room A", ['H', 'B', 'C']))
 
     when: 'the new room is linked back to the home room via exit "1"'
-    def homeLink = new Link(room, '1', new Room(map.home.name, map.home.description, map.home.exits))
-    homeLink = map.createLink(homeLink)
+      def linkedHome = room.link('H', new Room(home.name, home.description, home.description, home.exits))
 
     then: 'the new link connects back to home'
-    homeLink.to().id == home.id
+      linkedHome.id == home.id
 
     and: 'the new room has the correct exits linking to and from it'
-    def roomNode = graphDb.getNodeById(link.to().id)
-    def incoming =  roomNode.getRelationships(INCOMING).toList()
-    def outgoing = roomNode.getRelationships(OUTGOING).toList()
-    incoming.size() == 1
-    outgoing.size() == 3
-    incoming[0].name == homeExits[0]
-    outgoing.name.sort() == room.exits
+      def incoming = room.getRelationships(INCOMING).toList()
+      def outgoing = room.getRelationships(OUTGOING).toList()
+      incoming.size() == 1
+      outgoing.size() == 3
+      incoming[0].name == 'A'
+      outgoing.name.sort() == room.exits.sort(false)
 
     and: 'the new room is linked to the correct rooms'
-    incoming[0].startNode.id == home.id
-    def homeRel = outgoing.find { it.endNode.id == home.id }
-    homeRel != null
-    (outgoing - homeRel).every { it.endNode.name == UnexploredRoom.NAME }
+      incoming[0].startNode.id == home.id
+      def homeRel = outgoing.find { it.endNode.id == home.id }
+      homeRel != null
+      (outgoing - homeRel).every { it.endNode.name == Room.UNEXPLORED.name }
   }
 
   def setupSpec() {
@@ -99,15 +91,12 @@ class Neo4JMuseMapTest extends Specification {
 
   def setup() {
     graphDb = new TestGraphDatabaseFactory().newImpermanentDatabase()
+    RoomNode.initialise(graphDb)
     globalGraphOperations = GlobalGraphOperations.at(graphDb)
-    map = new Neo4JMuseMap(graphDb)
     cypher = new ExecutionEngine(graphDb)
     tx = graphDb.beginTx()
-    
-    createHomeNode()
-    createLinksTraversalDescription()
 
-    printMap("Map before test:")
+    createLinksTraversalDescription()
   }
 
   def cleanup() {
@@ -116,19 +105,8 @@ class Neo4JMuseMapTest extends Specification {
     graphDb.shutdown()
   }
   
-  void createHomeNode() {
-    home = graphDb.createNode(ROOM, TELEPORTABLE)
-    home.name = "Home"
-    home.location = "#0"
-    home.description = ""
-    homeExits.each { exit ->
-      def unexploredNode = graphDb.createNode(ROOM, UNEXPLORED)
-      unexploredNode.name = UnexploredRoom.NAME
-      def rel = home.createRelationshipTo(unexploredNode, EXIT)
-      rel.name = exit
-      unexploredNode
-    }
-    assert map.home.id == 0
+  RoomNode createHomeNode(Collection<String> exits = []) {
+    home = RoomNode.persist(new Room("Home", "#0", "", exits))
   }
 
   void createLinksTraversalDescription() {

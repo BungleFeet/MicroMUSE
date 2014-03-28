@@ -21,11 +21,10 @@ public class Navigator {
     Link traverse(Route route) {
         Link first = route.first();
         if (!first.from().equals(currentRoom())) {
-            if (!(first.from() instanceof TeleportableRoom)) {
-                throw new IllegalArgumentException("Cannot traverse a Route unless it begins with a TeleportableRoom");
+            if (!first.from().isTeleportable()) {
+                throw new IllegalArgumentException("Cannot traverse a Route unless it begins with a teleportable room");
             }
-            TeleportableRoom begin = (TeleportableRoom) first.from();
-            session.teleport(begin);
+            session.teleport(first.from());
         }
         Link last = first;
         for (Link link : route) {
@@ -40,7 +39,7 @@ public class Navigator {
             throw new UnexpectedRoomException("Room trying to exit is not the same as Link from Room", link.from(), currentRoom);
         }
         currentRoom = session.exit(link.exit());
-        if (link.to() instanceof UnexploredRoom) {
+        if (link.to().isUnexplored()) {
             return new Link(link.from(), link.exit(), currentRoom);
         } else if (currentRoom().equals(link.to())) {
             return link;
