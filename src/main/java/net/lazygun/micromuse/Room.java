@@ -23,6 +23,7 @@ public class Room {
     public Room(String name, String location, String description, Collection<String> exits) {
         this(name, location, description);
         this.exits.addAll(exits);
+        Collections.sort(this.exits);
     }
 
     public Room(String name, String location, String description) {
@@ -55,6 +56,16 @@ public class Room {
         return name.equals(UNEXPLORED.getName());
     }
 
+    public boolean isSameAs(Room room) {
+        return this.equals(room) || (
+                this.name.equals(room.getName()) &&
+                ((this.location == null && room.getLocation() == null) ||
+                 (this.location != null && this.location.equals(room.getLocation()))) &&
+                this.description.equals(room.getDescription()) &&
+                this.exits.equals(room.getExits())
+        );
+    }
+
     public Room link(String exit, Room to) {
         throw new UnsupportedOperationException("Not implemented");
     }
@@ -85,5 +96,10 @@ public class Room {
         result = 31 * result + (location != null ? location.hashCode() : 0);
         result = 31 * result + exits.hashCode();
         return result;
+    }
+
+    @Override
+    public String toString() {
+        return "Room{" + "name='" + name + '\'' + ", exits=" + exits + ", location='" + location + '\'' + '}';
     }
 }

@@ -1,13 +1,8 @@
 package net.lazygun.micromuse.neo4j
 
-import net.lazygun.micromuse.Link
 import net.lazygun.micromuse.Room
 import org.neo4j.cypher.javacompat.ExecutionEngine
-import org.neo4j.graphdb.GraphDatabaseService
-import org.neo4j.graphdb.PropertyContainer
-import org.neo4j.graphdb.Relationship
-import org.neo4j.graphdb.Transaction
-import org.neo4j.graphdb.Node
+import org.neo4j.graphdb.*
 import org.neo4j.graphdb.traversal.Evaluators
 import org.neo4j.graphdb.traversal.TraversalDescription
 import org.neo4j.graphdb.traversal.Uniqueness
@@ -73,7 +68,7 @@ class RoomNodeTest extends Specification {
       incoming.size() == 1
       outgoing.size() == 3
       incoming[0].name == 'A'
-      outgoing.name.sort() == room.exits.sort(false)
+      outgoing.name.sort() == room.exits
 
     and: 'the new room is linked to the correct rooms'
       incoming[0].startNode.id == home.id
@@ -81,6 +76,53 @@ class RoomNodeTest extends Specification {
       homeRel != null
       (outgoing - homeRel).every { it.endNode.name == Room.UNEXPLORED.name }
   }
+
+  def "load room by id"() {
+    given: 'a Room with an id'
+      def roomNode = createHomeNode()
+
+    when: 'that room is loaded'
+      def sameRoomNode = RoomNode.load(roomNode)
+
+    then: 'the loaded Room is the same as the initial Room'
+      roomNode.isSameAs(sameRoomNode)
+  }
+
+  def "load room by location"() {
+    given: 'a saved Room with a location'
+      def savedRoom = createHomeNode([], '#1')
+
+    when: 'a Room with the same location is created and passed to RoomNode#load(Room)'
+      def room = RoomNode.load(new Room(savedRoom.name, savedRoom.location, savedRoom.description))
+
+    then: 'the loaded Room is equal to the initially saved room'
+      room.isSameAs(savedRoom)
+  }
+
+  def "load room by name"() {
+    given: 'a saved Room without an id or location'
+      def saved = createHomeNode(['a', 'b', 'c'], '')
+      saved = new Room(saved.name, saved.location, saved.description, saved.exits)
+
+    when: 'a copy of the saved room is loaded'
+      def loaded = RoomNode.load(new Room(saved.name, saved.location, saved.description, saved.exits))
+
+    then: 'the loaded room is equal to the saved room'
+      saved.isSameAs(loaded)
+  }
+
+  def "error when loading room by name and more than one match exists"() {
+    given: 'two saved rooms without ids or locations, and the same name and exits'
+      def room = createHomeNode(["a", "b", "c"], null)
+      createHomeNode(["a", "b", "c"], null)
+
+    when: 'try to load a room with the same name and exists and no location'
+      RoomNode.load(new Room(room.name, room.location, room.description, room.exits))
+
+    then: 'an IllegalStateException is thrown'
+      thrown IllegalStateException
+  }
+
 
   def setupSpec() {
     PropertyContainer.metaClass  {
@@ -104,9 +146,9 @@ class RoomNodeTest extends Specification {
     tx.close()
     graphDb.shutdown()
   }
-  
-  RoomNode createHomeNode(Collection<String> exits = []) {
-    home = RoomNode.persist(new Room("Home", "#0", "", exits))
+
+  RoomNode createHomeNode(Collection<String> exits = [], String location = "#0") {
+    home = RoomNode.persist(new Room("Home", location, "", exits))
   }
 
   void createLinksTraversalDescription() {

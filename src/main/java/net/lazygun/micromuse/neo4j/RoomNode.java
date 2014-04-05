@@ -2,10 +2,8 @@ package net.lazygun.micromuse.neo4j;
 
 import net.lazygun.micromuse.*;
 import org.neo4j.graphdb.*;
-import org.neo4j.graphdb.traversal.Evaluation;
-import org.neo4j.graphdb.traversal.Evaluator;
-import org.neo4j.graphdb.traversal.TraversalDescription;
-import org.neo4j.graphdb.traversal.Uniqueness;
+import org.neo4j.graphdb.Traverser;
+import org.neo4j.graphdb.traversal.*;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -62,6 +60,10 @@ public class RoomNode extends Room implements Node {
         this.node = node;
     }
 
+    public Node getNode() {
+        return node;
+    }
+
     public static void initialise(GraphDatabaseService graphDb) {
         RoomNode.graphDb = graphDb;
     }
@@ -69,13 +71,16 @@ public class RoomNode extends Room implements Node {
     public static RoomNode load(final Room room) {
         // If room is a RoomNode, simply reload it
         if (room instanceof RoomNode) {
-            return new RoomNode(room, graphDb.getNodeById(((RoomNode)room).getId()));
+            try (Transaction ignored = graphDb.beginTx()) {
+                return new RoomNode(room, graphDb.getNodeById(((RoomNode)room).getId()));
+            }
         }
 
         // Otherwise, if room is teleportable, use the location (which should be unique) to find the node
         else if (room.isTeleportable())  {
             String location = room.getLocation();
-            try (ResourceIterator<Node> matches = graphDb.findNodesByLabelAndProperty(RoomNode.TELEPORTABLE, "location", location).iterator()) {
+            try (Transaction ignored = graphDb.beginTx();
+                 ResourceIterator<Node> matches = graphDb.findNodesByLabelAndProperty(RoomNode.TELEPORTABLE, "location", location).iterator()) {
                 if (matches.hasNext()) {
                     Node match = matches.next();
                     if (matches.hasNext()) {
@@ -90,25 +95,16 @@ public class RoomNode extends Room implements Node {
         // Otherwise, try to find a ROOM node with the same name, and same exit relationships.
         else {
             String name = room.getName();
-            TraversalDescription roomMatcher = graphDb.traversalDescription().breadthFirst().evaluator(new Evaluator() {
-                @Override
-                public Evaluation evaluate(Path path) {
-                    List<String> exitsToMatch = new ArrayList<>(room.getExits());
-                    Iterable<Relationship> relationships =
-                            path.startNode().getRelationships(EXIT, OUTGOING);
-                    for (Relationship rel : relationships) {
-                        if (!exitsToMatch.remove(rel.getProperty("name").toString())) {
-                            return Evaluation.EXCLUDE_AND_PRUNE;
-                        }
-                    }
-                    return exitsToMatch.size() == 0 ? Evaluation.INCLUDE_AND_PRUNE
-                                                    : Evaluation.EXCLUDE_AND_PRUNE;
-                }
-            });
             List<Node> matches = new ArrayList<>();
-            try (ResourceIterator<Node> matcher = graphDb.findNodesByLabelAndProperty(RoomNode.ROOM, "name", name).iterator()) {
-                while (matcher.hasNext()) {
-                    matches.addAll(HelperUtils.resourceIterableToList(roomMatcher.traverse(matcher.next()).nodes()));
+            try (Transaction ignored = graphDb.beginTx()) {
+                List<Node> potentialMatches = HelperUtils.resourceIterableToList(
+                        graphDb.findNodesByLabelAndProperty(RoomNode.ROOM, "name", name)
+                );
+                for (Node potentialMatch : potentialMatches) {
+                    List<String> exits = HelperUtils.getExits(potentialMatch);
+                    if (exits.equals(room.getExits())) {
+                        matches.add(potentialMatch);
+                    }
                 }
             }
             switch (matches.size()) {
@@ -120,20 +116,23 @@ public class RoomNode extends Room implements Node {
     }
 
     public static RoomNode persist(Room room) {
-        if (room instanceof RoomNode) {
-            throw new IllegalArgumentException("Room has is already persisted");
-        } else {
-            Node roomNode = graphDb.createNode(getLabels(room));
-            roomNode.setProperty(NAME, room.getName());
-            roomNode.setProperty(DESCRIPTION, room.getDescription());
-            if (room.isTeleportable()) {
-                roomNode.setProperty(LOCATION, room.getLocation());
+        try (Transaction txn = graphDb.beginTx()) {
+            if (room instanceof RoomNode) {
+                throw new IllegalArgumentException("Room has is already persisted");
+            } else {
+                Node roomNode = graphDb.createNode(getLabels(room));
+                roomNode.setProperty(NAME, room.getName());
+                roomNode.setProperty(DESCRIPTION, room.getDescription());
+                if (room.isTeleportable()) {
+                    roomNode.setProperty(LOCATION, room.getLocation());
+                }
+                for (String exit : room.getExits()) {
+                    RoomNode unexplored = persist(Room.UNEXPLORED);
+                    createExitRelationship(roomNode, unexplored, exit);
+                }
+                txn.success();
+                return new RoomNode(room, roomNode);
             }
-            for (String exit : room.getExits()) {
-                RoomNode unexplored = persist(Room.UNEXPLORED);
-                createExitRelationship(roomNode, unexplored, exit);
-            }
-            return new RoomNode(room, roomNode);
         }
     }
 
@@ -241,6 +240,16 @@ public class RoomNode extends Room implements Node {
         return new RoomNode(exitRelationship(exit).getEndNode());
     }
 
+    @Override
+    public boolean isSameAs(Room room) {
+        return super.isSameAs(room) && (!(room instanceof RoomNode) || this.node.equals(((RoomNode) room).node));
+    }
+
+    @Override
+    public String toString() {
+        return "RoomNode{" + "node=" + node + ", " + super.toString() + "}";
+    }
+
     private Relationship exitRelationship(String exit) {
         Relationship exitRel = null;
         for (Relationship rel : getRelationships(EXIT, OUTGOING)) {
@@ -295,7 +304,7 @@ public class RoomNode extends Room implements Node {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (o == null || !(o instanceof Room)) return false;
         if (!super.equals(o)) return false;
 
         final RoomNode roomNode = (RoomNode) o;

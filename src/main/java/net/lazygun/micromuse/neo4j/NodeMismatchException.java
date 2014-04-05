@@ -13,7 +13,7 @@ public class NodeMismatchException extends RuntimeException {
     private final Room room;
 
     public NodeMismatchException(String property, Node node, Room room) {
-        super("Node " + node + " missing '" + property + "' property, or property value doesn't match Room " + room);
+        super(node + " missing '" + property + "' property, or property value doesn't match" + room);
         this.node = node;
         this.room = room;
     }
