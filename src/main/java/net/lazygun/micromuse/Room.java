@@ -57,7 +57,7 @@ public class Room {
     }
 
     public boolean isSameAs(Room room) {
-        return this.equals(room) || (
+        return (getClass().equals(room.getClass()) && this.equals(room)) || (
                 this.name.equals(room.getName()) &&
                 ((this.location == null && room.getLocation() == null) ||
                  (this.location != null && this.location.equals(room.getLocation()))) &&

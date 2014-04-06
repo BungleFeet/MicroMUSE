@@ -14,15 +14,16 @@ public class Crawler {
 
     public static final String DB_PATH = "./db";
 
+    private static GraphDatabaseService db;
+
     public static void main(String[] args) {
-        final GraphDatabaseService db = new GraphDatabaseFactory().newEmbeddedDatabase(DB_PATH);
+        db = new GraphDatabaseFactory().newEmbeddedDatabase(DB_PATH);
         Runtime.getRuntime().addShutdownHook(new Thread() {
             @Override
             public void run() {
                 db.shutdown();
             }
         });
-        RoomNode.initialise(db);
     }
 
     private final Navigator navigator;
@@ -32,7 +33,7 @@ public class Crawler {
     }
 
     public void run() {
-        Room room = RoomNode.load(navigator.currentRoom());
+        Room room = RoomNode.load(navigator.currentRoom(), db);
         Route route;
         while ((route = room.findNearestUnexplored()) != null) {
             try {

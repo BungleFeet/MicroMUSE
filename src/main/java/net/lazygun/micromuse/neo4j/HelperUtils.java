@@ -13,21 +13,10 @@ import java.util.List;
  */
 public class HelperUtils {
 
-    public static <T> List<T> resourceIterableToList(ResourceIterable<T> iterable) {
-        try (ResourceIterator<T> iterator = iterable.iterator()) {
-            List<T> list = new ArrayList<>();
-            while (iterator.hasNext()) {
-                list.add(iterator.next());
-            }
-            return list;
-        }
-    }
-
     public static <T> List<T> iterableToList(Iterable<T> iterable) {
-        Iterator<T> iterator = iterable.iterator();
         List<T> list = new ArrayList<>();
-        while (iterator.hasNext()) {
-            list.add(iterator.next());
+        for (T e : iterable) {
+            list.add(e);
         }
         return list;
     }
