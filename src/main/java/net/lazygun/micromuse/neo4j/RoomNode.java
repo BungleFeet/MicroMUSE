@@ -9,11 +9,7 @@ import org.neo4j.graphdb.traversal.Evaluator;
 import org.neo4j.graphdb.traversal.TraversalDescription;
 import org.neo4j.graphdb.traversal.Uniqueness;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
 
 import static net.lazygun.micromuse.neo4j.RoomNode.Relation.EXIT;
 import static org.neo4j.graphdb.Direction.OUTGOING;
@@ -23,7 +19,7 @@ import static org.neo4j.graphdb.Direction.OUTGOING;
  * Created by ewan on 27/03/2014.
  */
 @SuppressWarnings("deprecation")
-public class RoomNode extends Room implements Node {
+public class RoomNode implements Room, Node {
 
     static final String NAME = "name";
     static final String DESCRIPTION = "description";
@@ -51,80 +47,65 @@ public class RoomNode extends Room implements Node {
 
     private final Node node;
 
-    RoomNode(Room room, Node node) {
-        super(room.getName(), room.getLocation(), room.getDescription(), room.getExits());
-        this.node = node;
-        verify(room, node);
-    }
-
     RoomNode(Node node) {
-        super((String) node.getProperty(NAME), (String) node.getProperty(LOCATION, null), (String) node.getProperty(DESCRIPTION), getExitRelationNames(node));
         this.node = node;
     }
 
-    public Node getNode() {
-        return node;
+    public static RoomNode findById(long id, GraphDatabaseService db) {
+        return new RoomNode(db.getNodeById(id));
     }
 
-    public static RoomNode load(final Room room, GraphDatabaseService graphDb) {
-        // If room is a RoomNode, simply reload it
+    public static RoomNode findByLocation(String location, GraphDatabaseService db) {
+        List<Node> matches = HelperUtils.iterableToList(db.findNodesByLabelAndProperty(TELEPORTABLE, "location", location));
+        switch (matches.size()) {
+            case 0:
+                return null;
+            case 1:
+                return new RoomNode(matches.get(0));
+            default:
+                throw new IllegalStateException("Found more than one Node with location " + location);
+        }
+    }
+
+    public static List<RoomNode> findAllByNameAndExits(String name, List<String> exits, GraphDatabaseService db) {
+        List<RoomNode> matches = new ArrayList<>();
+        List<Node> potentialMatches = HelperUtils.iterableToList(
+                db.findNodesByLabelAndProperty(ROOM, "name", name)
+        );
+        for (Node potentialMatch : potentialMatches) {
+            List<String> nodeExits = HelperUtils.getExits(potentialMatch);
+            if (nodeExits.equals(exits)) {
+                matches.add(new RoomNode(potentialMatch));
+            }
+        }
+        return matches;
+    }
+
+    public static RoomNode findByExample(Room room, GraphDatabaseService db) {
         if (room instanceof RoomNode) {
-                return new RoomNode(room, ((RoomNode) room).getGraphDatabase().getNodeById(((RoomNode) room).getId()));
-
+            return (RoomNode) room;
         }
-
-        // Otherwise, if room is teleportable, use the location (which should be unique) to find the node
-        else if (room.isTeleportable())  {
-            String location = room.getLocation();
-            List<Node> matches = HelperUtils.iterableToList(graphDb.findNodesByLabelAndProperty(RoomNode.TELEPORTABLE, "location", location));
-            switch (matches.size()) {
-                case 0:
-                    return null;
-                case 1:
-                    return new RoomNode(room, matches.get(0));
-                default:
-                    throw new IllegalStateException("Found more than one Node with location " + location);
-            }
-
+        if (room.isTeleportable()) {
+            return findByLocation(room.getLocation(), db);
         }
-
-        // Otherwise, try to find a ROOM node with the same name, and same exit relationships.
-        else {
-            String name = room.getName();
-            List<Node> matches = new ArrayList<>();
-            List<Node> potentialMatches = HelperUtils.iterableToList(
-                    graphDb.findNodesByLabelAndProperty(RoomNode.ROOM, "name", name)
-                );
-                for (Node potentialMatch : potentialMatches) {
-                    List<String> exits = HelperUtils.getExits(potentialMatch);
-                    if (exits.equals(room.getExits())) {
-                        matches.add(potentialMatch);
-                    }
-                }
-            switch (matches.size()) {
-                case 0: return null;
-                case 1: return new RoomNode(room, matches.get(0));
-                default: throw new IllegalStateException("Found " + matches.size() + " Node matching Room " + room);
-            }
-        }
+        List<RoomNode> matches = findAllByNameAndExits(room.getName(), room.getExits(), db);
+        return matches.size() > 0 ? matches.get(0) : null;
     }
 
-    public static RoomNode persist(Room room, GraphDatabaseService graphDb) {
-            if (room instanceof RoomNode) {
-                throw new IllegalArgumentException("Room has is already persisted");
-            } else {
-                Node roomNode = graphDb.createNode(getLabels(room));
-                roomNode.setProperty(NAME, room.getName());
-                roomNode.setProperty(DESCRIPTION, room.getDescription());
-                if (room.isTeleportable()) {
-                    roomNode.setProperty(LOCATION, room.getLocation());
-                }
-                for (String exit : room.getExits()) {
-                    RoomNode unexplored = persist(Room.UNEXPLORED, graphDb);
-                    createExitRelationship(roomNode, unexplored, exit);
-                }
-                return new RoomNode(room, roomNode);
+    public static RoomNode create(String name, String location, String description, List<String> exits, GraphDatabaseService graphDb) {
+        Node node = graphDb.createNode(getLabels(name, location));
+        node.setProperty(NAME, name);
+        if (location != null) {
+            node.setProperty(LOCATION, location);
+        }
+        node.setProperty(DESCRIPTION, description);
+        if (exits != null) {
+            for (String exit : exits) {
+                RoomNode unexplored = create(UNEXPLORED.name(), null, "", null, graphDb);
+                createExitRelationship(node, unexplored, exit);
             }
+        }
+        return new RoomNode(node);
     }
 
     static Relationship createExitRelationship(Node from, Node to, String name) {
@@ -133,42 +114,24 @@ public class RoomNode extends Room implements Node {
         return exit;
     }
 
-    private static Label[] getLabels(Room room) {
+    private static Label[] getLabels(String name, String location) {
         List<Label> labels = new ArrayList<>();
-        labels.add(RoomNode.ROOM);
-        if (room.isUnexplored()) {
-            labels.add(RoomNode.UNEXPLORED);
-        } else if (room.isTeleportable()) {
-            labels.add(RoomNode.TELEPORTABLE);
+        labels.add(ROOM);
+        if (name.equals(UNEXPLORED.name())) {
+            labels.add(UNEXPLORED);
+        } else if (location != null) {
+            labels.add(TELEPORTABLE);
         }
         return labels.toArray(new Label[labels.size()]);
     }
 
-    private static List<String> getExitRelationNames(Node node) {
+    private List<String> getExitRelationNames(Node node) {
         List<String> exits = new ArrayList<>();
         for (Relationship rel : node.getRelationships(Relation.EXIT, Direction.OUTGOING)) {
             exits.add((String) rel.getProperty(NAME));
         }
+        Collections.sort(exits);
         return exits;
-    }
-
-    private static void verify(Room room, Node node) {
-        if (!(node.hasProperty(NAME) && room.getName().equals(node.getProperty(NAME)))) {
-            throw new NodeMismatchException(NAME, node, room);
-        }
-        if (room.isTeleportable() && !(node.hasProperty(LOCATION) && room.getLocation().equals(node.getProperty(LOCATION)))) {
-            throw new NodeMismatchException(LOCATION, node, room);
-        }
-        if (room.getDescription() != null && !(node.hasProperty(DESCRIPTION) && room.getDescription().equals(node.getProperty(DESCRIPTION)))) {
-            throw new NodeMismatchException(DESCRIPTION, node, room);
-        }
-        List<String> roomExits = new ArrayList<>(room.getExits());
-        Collections.sort(roomExits);
-        List<String> nodeExits = new ArrayList<>(getExitRelationNames(node));
-        Collections.sort(nodeExits);
-        if (!roomExits.equals(nodeExits)) {
-            throw new NodeMismatchException(EXITS, node, room);
-        }
     }
 
     @Override
@@ -180,24 +143,58 @@ public class RoomNode extends Room implements Node {
         System.out.println("Creating link (" + getName() + ")-[" + exit + "]->(" + to.getName() + ")");
 
         // Now get the saved RoomNode on the other side of the exit
-            RoomNode persistedTo = exit(exit);
+        RoomNode persistedTo = exit(exit);
 
-            // If the to Node represents an unexplored room, we replace it with the room on the TO side of the given link
-            if (persistedTo.hasLabel(RoomNode.UNEXPLORED)) {
-                persistedTo.delete();
-                persistedTo = RoomNode.load(to, getGraphDatabase());
-                if (persistedTo == null) {
-                    persistedTo = RoomNode.persist(to, getGraphDatabase());
-                }
-                RoomNode.createExitRelationship(this, persistedTo, exit);
+        // If the to Node represents an unexplored room, we replace it with the room on the TO side of the given link
+        if (persistedTo.hasLabel(UNEXPLORED)) {
+            persistedTo.delete();
+            persistedTo = findByExample(to, getGraphDatabase());
+            if (persistedTo == null) {
+                persistedTo = create(to.getName(), to.getLocation(), to.getDescription(), to.getExits(), getGraphDatabase());
             }
+            createExitRelationship(this, persistedTo, exit);
+        }
 
-            // Otherwise, the link already exists, so we simply check that the given TO Room matches that in the database
-            else {
-                verify(to, persistedTo);
+        // Otherwise, the link already exists, so we simply check that the given TO Room matches that in the database
+        else {
+            RoomNode existing = findByExample(to, getGraphDatabase());
+            if (existing.getId() != persistedTo.getId()) {
+                throw new IllegalStateException(
+                        "A link connecting via this exit to a different room already exists: " + existing);
             }
+        }
 
-            return persistedTo;
+        return persistedTo;
+    }
+
+    @Override
+    public String getName() {
+        return (String) getProperty(NAME);
+    }
+
+    @Override
+    public String getLocation() {
+        return (String) getProperty(LOCATION, null);
+    }
+
+    @Override
+    public String getDescription() {
+        return (String) getProperty(DESCRIPTION);
+    }
+
+    @Override
+    public List<String> getExits() {
+        return getExitRelationNames(this);
+    }
+
+    @Override
+    public boolean isTeleportable() {
+        return getLocation() != null;
+    }
+
+    @Override
+    public boolean isUnexplored() {
+        return getName().equals(UNEXPLORED.name());
     }
 
     @Override
@@ -224,13 +221,9 @@ public class RoomNode extends Room implements Node {
     }
 
     @Override
-    public boolean isSameAs(Room room) {
-        return super.isSameAs(room) && (!(room instanceof RoomNode) || this.node.equals(((RoomNode) room).node));
-    }
-
-    @Override
     public String toString() {
-        return "RoomNode{" + "node=" + node + ", " + super.toString() + "}";
+        return "RoomNode{name=" + getName() + ",location=" + getLocation() + ",exits=[" +
+               Arrays.toString(getExits().toArray()) + "],node=" + node + "}";
     }
 
     private Relationship exitRelationship(String exit) {
@@ -246,23 +239,23 @@ public class RoomNode extends Room implements Node {
         return exitRel;
     }
 
-    private Route pathToRoute(Path path) {
+    private Route<RoomNode> pathToRoute(Path path) {
         if (path == null) {
             return null;
         }
-        List<Link> links = new ArrayList<>();
+        List<Link<RoomNode>> links = new ArrayList<>();
         for (Relationship rel : path.relationships()) {
-            Link link = relationshipToLink(rel);
+            Link<RoomNode> link = relationshipToLink(rel);
             links.add(link);
         }
-        return new Route(links);
+        return new Route<>(links);
     }
 
-    private Link relationshipToLink(Relationship relationship) {
-        Room from = new RoomNode(relationship.getStartNode());
+    private Link<RoomNode> relationshipToLink(Relationship relationship) {
+        RoomNode from = new RoomNode(relationship.getStartNode());
         String exit = (String) relationship.getProperty("name");
-        Room to = new RoomNode(relationship.getEndNode());
-        return new Link(from, exit, to);
+        RoomNode to = new RoomNode(relationship.getEndNode());
+        return new Link<>(from, exit, to);
     }
 
     private TraversalDescription createUnexploredRoomNodeFinder() {
@@ -274,7 +267,7 @@ public class RoomNode extends Room implements Node {
                 .evaluator(new Evaluator() {
                     @Override
                     public Evaluation evaluate(Path path) {
-                        return path.endNode().hasLabel(RoomNode.UNEXPLORED) ? Evaluation.INCLUDE_AND_PRUNE
+                        return path.endNode().hasLabel(UNEXPLORED) ? Evaluation.INCLUDE_AND_PRUNE
                                 : Evaluation.EXCLUDE_AND_CONTINUE;
                     }
                 });

@@ -33,11 +33,11 @@ public class Crawler {
     }
 
     public void run() {
-        Room room = RoomNode.load(navigator.currentRoom(), db);
+        Room room = RoomNode.findByExample(navigator.currentRoom(), db);
         Route route;
         while ((route = room.findNearestUnexplored()) != null) {
             try {
-                Link lastStep = navigator.traverse(route);
+                Link<Room> lastStep = navigator.traverse(route);
                 room = room.link(lastStep.exit(), lastStep.to());
             } catch (LinkAlreadyExistsException ex) {
                 // Another crawler must have followed this exit first.
