@@ -19,7 +19,7 @@ public class Neo4JMuseMap implements MuseMap {
     @Override
     public Room getHome() {
         try (Transaction tx = graphDb.beginTx()) {
-            Room room = new RoomNode(graphDb.getNodeById(0));
+            Room room = RoomNode.findById(0);
             tx.success();
             return room;
         }

@@ -27,7 +27,7 @@ class RoomNodeTest extends Specification {
 
   def "replace unexplored room with regular room"() {
     given: 'a home room and a new room to be saved'
-      def home = RoomNode.create("home", null, "", ["A"], db)
+      def home = RoomNode.create("home", null, "", ["A"])
       def room = new RoomImpl("Room A", null, "Test room A", ['A', 'B', 'C'])
 
     when: 'the new room is linked to from the home room via the first exit'
@@ -51,7 +51,7 @@ class RoomNodeTest extends Specification {
 
   def "create a link back to home room"() {
     given: 'a new room, linked to the home room from its first exit'
-      def home = RoomNode.create("home", null, "", ["A"], db)
+      def home = RoomNode.create("home", null, "", ["A"])
       def room = home.link("A", new RoomImpl("Room A", null, "Test room A", ['H', 'B', 'C']))
 
     when: 'the new room is linked back to the home room via exit "1"'
@@ -77,32 +77,32 @@ class RoomNodeTest extends Specification {
 
   def "found room by id"() {
     given: 'a Room with an id'
-      def roomNode = RoomNode.create("home", null, "", [], db)
+      def roomNode = RoomNode.create("home", null, "", [])
 
     expect: 'the found Room is the same as the initial Room'
-      RoomNode.findById(roomNode.id, db).id == roomNode.id
+      RoomNode.findById(roomNode.id).id == roomNode.id
   }
 
   def "find room by location"() {
     given: 'a saved Room with a location'
-      def savedRoom = RoomNode.create("home", "#1", "", [], db)
+      def savedRoom = RoomNode.create("home", "#1", "", [])
 
     expect: 'the found room has the same id as the created room'
-      RoomNode.findById(savedRoom.id, db).id == savedRoom.id
+      RoomNode.findById(savedRoom.id).id == savedRoom.id
   }
 
   def "find room by example"() {
     given: 'a saved Room without an id or location'
-      def saved = RoomNode.create("home", null, "", ['a', 'b', 'c'], db)
+      def saved = RoomNode.create("home", null, "", ['a', 'b', 'c'])
       def example = new RoomImpl(saved.name, saved.location, saved.description, saved.exits)
 
     expect: 'the found room has the same id as the saved room'
-      RoomNode.findByExample(example, db).id == saved.id
+      RoomNode.findByExample(example).id == saved.id
   }
 
   def "room can be created"() {
     when: 'a room is created'
-      def room = RoomNode.create('room', '#0', 'A Room', ["c", "a", "b"], db)
+      def room = RoomNode.create('room', '#0', 'A Room', ["c", "a", "b"])
 
     then: 'the room has an id an the expected properties'
       room.id != null
@@ -114,8 +114,8 @@ class RoomNodeTest extends Specification {
 
   def "RoomNode can be exited"() {
     given: 'two linked room'
-      def roomA = RoomNode.create("roomA", "#A", "Room A", ["B"], db)
-      def roomB = RoomNode.create("roomB", "#B", "Room B", ["A"], db)
+      def roomA = RoomNode.create("roomA", "#A", "Room A", ["B"])
+      def roomB = RoomNode.create("roomB", "#B", "Room B", ["A"])
       roomA.link("B", roomB).link("A", roomA)
 
     when: 'room A is exited'
@@ -127,8 +127,8 @@ class RoomNodeTest extends Specification {
 
   def "can find nearest unexplored to room with unexplored exits"() {
     given: 'a room with two exits, one of which is unexplored, the other of which is linked to a room with unexplored exits'
-      def roomA = RoomNode.create("roomA", "#A", "Room A", ["B", "C"], db)
-      def roomB = RoomNode.create("roomB", "#B", "Room B", ["A", "D", "E"], db)
+      def roomA = RoomNode.create("roomA", "#A", "Room A", ["B", "C"])
+      def roomB = RoomNode.create("roomB", "#B", "Room B", ["A", "D", "E"])
       roomA.link("B", roomB).link("A", roomA)
 
     when: 'we find the nearest unexplored room to room A'
@@ -144,9 +144,9 @@ class RoomNodeTest extends Specification {
 
   def "can find nearest unexplored to room with no unexplored exits"() {
     given: 'a room with one exit, linked to a room with unexplored exits, linked to another room with unexplored exits'
-      def roomA = RoomNode.create("roomA", "#A", "Room A", ["B"], db)
-      def roomB = RoomNode.create("roomB", "#B", "Room B", ["A", "C", "D"], db)
-      def roomC = RoomNode.create("roomC", "#C", "Room C", ["B", "E"], db)
+      def roomA = RoomNode.create("roomA", "#A", "Room A", ["B"])
+      def roomB = RoomNode.create("roomB", "#B", "Room B", ["A", "C", "D"])
+      def roomC = RoomNode.create("roomC", "#C", "Room C", ["B", "E"])
       roomA.link("B", roomB).link("A", roomA)
       roomB.link("C", roomC).link("B", roomB)
 
@@ -167,9 +167,9 @@ class RoomNodeTest extends Specification {
 
   def "full route to nearest unexplored room is given when no rooms are teleportable"() {
     given: 'a room with one exit, linked to a room with two exits, linked to another room with unexplored exits'
-      def roomA = RoomNode.create("roomA", null, "Room A", ["B"], db)
-      def roomB = RoomNode.create("roomB", null, "Room B", ["A", "C"], db)
-      def roomC = RoomNode.create("roomC", null, "Room C", ["B", "D"], db)
+      def roomA = RoomNode.create("roomA", null, "Room A", ["B"])
+      def roomB = RoomNode.create("roomB", null, "Room B", ["A", "C"])
+      def roomC = RoomNode.create("roomC", null, "Room C", ["B", "D"])
       roomA.link("B", roomB).link("A", roomA)
       roomB.link("C", roomC).link("B", roomB)
 
@@ -201,6 +201,7 @@ class RoomNodeTest extends Specification {
 
   def setup() {
     db = new TestGraphDatabaseFactory().newImpermanentDatabase()
+    RoomNode.initialise(db)
     globalGraphOperations = GlobalGraphOperations.at(db)
     tx = db.beginTx()
     createLinksTraversalDescription()

@@ -33,7 +33,7 @@ public class Crawler {
     }
 
     public void run() {
-        Room room = RoomNode.findByExample(navigator.currentRoom(), db);
+        Room room = RoomNode.findByExample(navigator.currentRoom());
         Route route;
         while ((route = room.findNearestUnexplored()) != null) {
             try {
