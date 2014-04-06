@@ -8,31 +8,31 @@ import java.util.*;
  *
  * @author Ewan
  */
-public class Route<T> implements Iterable<Link<T>> {
+public class Route implements Iterable<Link> {
 
-    private final List<Link<T>> path;
+    private final List<Link> path;
 
-    public Route(List<Link<T>> path) {
+    public Route(List<Link> path) {
         this.path = new ArrayList<>(path);
     }
 
-    public List<Link<T>> getPath() {
+    public List<Link> getPath() {
         return Collections.unmodifiableList(path);
     }
 
-    public Route<T> head() {
-        return new Route<>(path.subList(0, path.size() - 1));
+    public Route head() {
+        return new Route(path.subList(0, path.size() - 1));
     }
 
-    public Route<T> tail() {
-        return new Route<>(path.subList(1, path.size()));
+    public Route tail() {
+        return new Route(path.subList(1, path.size()));
     }
 
-    public Link<T> first() {
+    public Link first() {
         return path.get(0);
     }
 
-    public Link<T> last() {
+    public Link last() {
         return path.get(path.size() - 1);
     }
 
@@ -40,16 +40,16 @@ public class Route<T> implements Iterable<Link<T>> {
         return path.size();
     }
 
-    public ListIterator<Link<T>> iterator() {
-        final ListIterator<Link<T>> iterator = path.listIterator();
-        return new ListIterator<Link<T>>() {
+    public ListIterator<Link> iterator() {
+        final ListIterator<Link> iterator = path.listIterator();
+        return new ListIterator<Link>() {
             @Override
             public boolean hasNext() {
                 return iterator.hasNext();
             }
 
             @Override
-            public Link<T> next() {
+            public Link next() {
                 return iterator.next();
             }
 
@@ -59,7 +59,7 @@ public class Route<T> implements Iterable<Link<T>> {
             }
 
             @Override
-            public Link<T> previous() {
+            public Link previous() {
                 return iterator.previous();
             }
 
@@ -80,12 +80,12 @@ public class Route<T> implements Iterable<Link<T>> {
             }
 
             @Override
-            public void set(Link<T> link) {
+            public void set(Link link) {
                 throw new UnsupportedOperationException();
             }
 
             @Override
-            public void add(Link<T> link) {
+            public void add(Link link) {
                 throw new UnsupportedOperationException();
             }
         };

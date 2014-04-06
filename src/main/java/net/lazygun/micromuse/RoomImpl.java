@@ -1,9 +1,6 @@
 package net.lazygun.micromuse;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.ArrayList;
+import java.util.*;
 
 /**
  * TODO: Write Javadocs for this class.
@@ -15,6 +12,7 @@ public class RoomImpl implements Room {
 
     public static final RoomImpl UNEXPLORED = new RoomImpl("UNEXPLORED", null, "");
 
+    private final long id;
     private final String name;
     private final String location;
     private final String description;
@@ -27,9 +25,15 @@ public class RoomImpl implements Room {
     }
 
     public RoomImpl(String name, String location, String description) {
+        id = UUID.randomUUID().getLeastSignificantBits();
         this.name = name;
         this.location = location;
         this.description = description;
+    }
+
+    @Override
+    public long getId() {
+        return id;
     }
 
     public String getName() {

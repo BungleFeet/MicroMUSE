@@ -1,6 +1,7 @@
 package net.lazygun.micromuse.neo4j;
 
 import net.lazygun.micromuse.Link;
+import net.lazygun.micromuse.LinkAlreadyExistsException;
 import net.lazygun.micromuse.Room;
 import net.lazygun.micromuse.Route;
 import org.neo4j.graphdb.*;
@@ -53,7 +54,7 @@ public class RoomNode implements Room, Node {
         this.node = node;
     }
 
-    public static void initialise(GraphDatabaseService db) {
+    static void initialise(GraphDatabaseService db) {
         RoomNode.db = db;
     }
 
@@ -169,18 +170,13 @@ public class RoomNode implements Room, Node {
                 persistedTo = create(to.getName(), to.getLocation(), to.getDescription(), to.getExits());
             }
             createExitRelationship(this, persistedTo, exit);
+            return persistedTo;
         }
 
-        // Otherwise, the link already exists, so we simply check that the given TO Room matches that in the database
+        // Otherwise, the link already exists
         else {
-            RoomNode existing = findByExample(to);
-            if (existing.getId() != persistedTo.getId()) {
-                throw new IllegalStateException(
-                        "A link connecting via this exit to a different room already exists: " + existing);
-            }
+            throw new LinkAlreadyExistsException(new Link(this, exit, persistedTo));
         }
-
-        return persistedTo;
     }
 
     @Override
@@ -255,23 +251,23 @@ public class RoomNode implements Room, Node {
         return exitRel;
     }
 
-    private Route<RoomNode> pathToRoute(Path path) {
+    private Route pathToRoute(Path path) {
         if (path == null) {
             return null;
         }
-        List<Link<RoomNode>> links = new ArrayList<>();
+        List<Link> links = new ArrayList<>();
         for (Relationship rel : path.relationships()) {
-            Link<RoomNode> link = relationshipToLink(rel);
+            Link link = relationshipToLink(rel);
             links.add(link);
         }
-        return new Route<>(links);
+        return new Route(links);
     }
 
-    private Link<RoomNode> relationshipToLink(Relationship relationship) {
+    private Link relationshipToLink(Relationship relationship) {
         RoomNode from = new RoomNode(relationship.getStartNode());
         String exit = (String) relationship.getProperty("name");
         RoomNode to = new RoomNode(relationship.getEndNode());
-        return new Link<>(from, exit, to);
+        return new Link(from, exit, to);
     }
 
     private TraversalDescription createUnexploredRoomNodeFinder() {
@@ -292,20 +288,17 @@ public class RoomNode implements Room, Node {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || !(o instanceof Room)) return false;
-        if (!super.equals(o)) return false;
+        if (o == null || getClass() != o.getClass()) return false;
 
-        final RoomNode roomNode = (RoomNode) o;
+        RoomNode roomNode = (RoomNode) o;
 
-        return node.getId() == roomNode.node.getId();
+        return getId() == roomNode.node.getId();
 
     }
 
     @Override
     public int hashCode() {
-        int result = super.hashCode();
-        result = 31 * result + new Long(node.getId()).hashCode();
-        return result;
+        return Long.valueOf(getId()).hashCode();
     }
 
     /**

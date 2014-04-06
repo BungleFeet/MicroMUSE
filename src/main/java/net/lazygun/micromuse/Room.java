@@ -9,6 +9,9 @@ import java.util.List;
  * @author Ewan
  */
 public interface Room {
+
+    public long getId();
+
     public String getName();
 
     public String getLocation();

@@ -1,6 +1,5 @@
 package net.lazygun.micromuse.neo4j
 
-import net.lazygun.micromuse.Link
 import net.lazygun.micromuse.RoomImpl
 import org.neo4j.graphdb.*
 import org.neo4j.graphdb.traversal.Evaluators
@@ -45,7 +44,7 @@ class RoomNodeTest extends Specification {
       outgoing.name.sort() == room.exits
 
     and: 'the new room is linked to the correct rooms'
-      incoming[0].startNode.id == home.id
+      incoming[0].startNode == home
       outgoing.every { it.endNode.name == RoomImpl.UNEXPLORED.name }
   }
 
@@ -58,7 +57,7 @@ class RoomNodeTest extends Specification {
       def linkedHome = room.link('H', new RoomImpl(home.name, home.description, home.description, home.exits))
 
     then: 'the new link connects back to home'
-      linkedHome.id == home.id
+      linkedHome == home
 
     and: 'the new room has the correct exits linking to and from it'
       def incoming = room.getRelationships(INCOMING).toList()
@@ -69,8 +68,8 @@ class RoomNodeTest extends Specification {
       outgoing.name.sort() == room.exits
 
     and: 'the new room is linked to the correct rooms'
-      incoming[0].startNode.id == home.id
-      def homeRel = outgoing.find { it.endNode.id == home.id }
+      incoming[0].startNode == home
+      def homeRel = outgoing.find { it.endNode == home }
       homeRel != null
       (outgoing - homeRel).every { it.endNode.name == RoomImpl.UNEXPLORED.name }
   }
@@ -80,7 +79,7 @@ class RoomNodeTest extends Specification {
       def roomNode = RoomNode.create("home", null, "", [])
 
     expect: 'the found Room is the same as the initial Room'
-      RoomNode.findById(roomNode.id).id == roomNode.id
+      RoomNode.findById(roomNode.id) == roomNode
   }
 
   def "find room by location"() {
@@ -88,7 +87,7 @@ class RoomNodeTest extends Specification {
       def savedRoom = RoomNode.create("home", "#1", "", [])
 
     expect: 'the found room has the same id as the created room'
-      RoomNode.findById(savedRoom.id).id == savedRoom.id
+      RoomNode.findById(savedRoom.id) == savedRoom
   }
 
   def "find room by example"() {
@@ -97,7 +96,7 @@ class RoomNodeTest extends Specification {
       def example = new RoomImpl(saved.name, saved.location, saved.description, saved.exits)
 
     expect: 'the found room has the same id as the saved room'
-      RoomNode.findByExample(example).id == saved.id
+      RoomNode.findByExample(example) == saved
   }
 
   def "room can be created"() {
@@ -122,7 +121,7 @@ class RoomNodeTest extends Specification {
       def nextRoom = roomA.exit("B")
 
     then: 'we get room B'
-      nextRoom.id == roomB.id
+      nextRoom == roomB
   }
 
   def "can find nearest unexplored to room with unexplored exits"() {
@@ -132,14 +131,14 @@ class RoomNodeTest extends Specification {
       roomA.link("B", roomB).link("A", roomA)
 
     when: 'we find the nearest unexplored room to room A'
-      List<Link<RoomNode>> route = roomA.findNearestUnexplored().toList()
+      def route = roomA.findNearestUnexplored().toList()
 
     then: 'we get a route with one step, from room A to the unexplored room C'
       route.size() == 1
       def step = route[0]
-      step.from().id == roomA.id
+      step.from() == roomA
       step.exit() == "C"
-      step.to().id == roomA.exit("C").id
+      step.to() == roomA.exit("C")
   }
 
   def "can find nearest unexplored to room with no unexplored exits"() {
@@ -151,18 +150,18 @@ class RoomNodeTest extends Specification {
       roomB.link("C", roomC).link("B", roomB)
 
     when: 'we find the nearest unexplored room to room A'
-      List<Link<RoomNode>> route = roomA.findNearestUnexplored().toList()
+      def route = roomA.findNearestUnexplored().toList()
 
     then: 'we get a route with two steps, from A to B to the unexplored room D'
       route.size() == 2
       def step1 = route[0]
-      step1.from().id == roomA.id
+      step1.from() == roomA
       step1.exit() == "B"
-      step1.to().id == roomA.exit("B").id
+      step1.to() == roomA.exit("B")
       def step2 = route[1]
-      step2.from().id == roomB.id
+      step2.from() == roomB
       step2.exit() == "D"
-      step2.to().id == roomB.exit("D").id
+      step2.to() == roomB.exit("D")
   }
 
   def "full route to nearest unexplored room is given when no rooms are teleportable"() {
@@ -174,22 +173,22 @@ class RoomNodeTest extends Specification {
       roomB.link("C", roomC).link("B", roomB)
 
     when: 'we find the nearest unexplored room to room A'
-      List<Link<RoomNode>> route = roomA.findNearestUnexplored().toList()
+      def route = roomA.findNearestUnexplored().toList()
 
     then: 'we get a route with three steps, from A to B to C to unexplored room D'
       route.size() == 3
       def step1 = route[0]
-      step1.from().id == roomA.id
+      step1.from() == roomA
       step1.exit() == "B"
-      step1.to().id == roomA.exit("B").id
+      step1.to() == roomA.exit("B")
       def step2 = route[1]
-      step2.from().id == roomB.id
+      step2.from() == roomB
       step2.exit() == "C"
-      step2.to().id == roomB.exit("C").id
+      step2.to() == roomB.exit("C")
       def step3 = route[2]
-      step3.from().id == roomC.id
+      step3.from() == roomC
       step3.exit() == "D"
-      step3.to().id == roomC.exit("D").id
+      step3.to() == roomC.exit("D")
   }
 
   def setupSpec() {

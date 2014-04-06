@@ -6,19 +6,19 @@ package net.lazygun.micromuse;
  *
  * @author Ewan
  */
-public class Link<T> {
+public class Link {
 
-    private final T from;
+    private final Room from;
     private final String exit;
-    private final T to;
+    private final Room to;
 
-    public Link(T from, String exit, T to) {
+    public Link(Room from, String exit, Room to) {
         this.from = from;
         this.exit = exit;
         this.to = to;
     }
 
-    public T from() {
+    public Room from() {
         return from;
     }
 
@@ -26,7 +26,7 @@ public class Link<T> {
         return exit;
     }
 
-    public T to() {
+    public Room to() {
         return to;
     }
 }
