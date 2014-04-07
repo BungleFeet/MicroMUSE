@@ -61,7 +61,7 @@ public class RoomImpl implements Room {
     }
 
     @Override
-    public Room link(String exit, Room to) {
+    public Link link(String exit, Room to) {
         throw new UnsupportedOperationException("Not implemented");
     }
 

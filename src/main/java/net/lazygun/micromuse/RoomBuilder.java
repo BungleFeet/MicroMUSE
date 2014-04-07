@@ -14,4 +14,6 @@ public interface RoomBuilder {
     public RoomBuilder exits(String... exits);
 
     public Room build();
+
+    public RoomBuilder copy(Room room);
 }

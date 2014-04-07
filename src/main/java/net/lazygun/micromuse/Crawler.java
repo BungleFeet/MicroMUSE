@@ -16,48 +16,67 @@ public class Crawler implements Callable<Integer> {
     public static final int CONCURRENT_CRAWLERS = 1;
 
     public static void main(String[] args) {
-        RoomService roomService = new GraphRoomService(DB_PATH);
-        //Navigator nav = new Navigator(new Session(roomService));
+
+    }
+
+    public static long crawl(int threads, long delay, RoomService roomService, SessionFactory sessionFactory) {
         ExecutorService executorService = Executors.newCachedThreadPool();
-        List<Future<Integer>> jobs = new ArrayList<>(CONCURRENT_CRAWLERS);
-        for (int i = 0; i < CONCURRENT_CRAWLERS; i++) {
-            //jobs.set(i, executorService.submit(new Crawler(nav)));
+        List<Future<Integer>> jobs = new ArrayList<>(threads);
+        jobs.add(executorService.submit(new Crawler(sessionFactory, roomService)));
+        for (int i = 1; i < threads; i++) {
             try {
-                Thread.sleep(10000);
+                Thread.sleep(delay);
+                jobs.add(executorService.submit(new Crawler(sessionFactory, roomService)));
             } catch (InterruptedException ignored) {
             }
         }
-        for (int i = 0; i < CONCURRENT_CRAWLERS; i++) {
+        long totalLinks = 0;
+        for (int i = 1; i <= threads; i++) {
             try {
-                Integer links = jobs.get(i).get();
-                System.out.println("Crawler thread " + i + " of " + CONCURRENT_CRAWLERS + " completed. Created " + links + "links.");
+                Integer links = jobs.get(i-1).get();
+                System.out.println("Crawler thread " + i + " of " + threads + " completed. Created " + links + " links.");
+                totalLinks += links;
             } catch (Exception e) {
-                System.err.println("Exception running crawler thread " + i + " of " + CONCURRENT_CRAWLERS + ": " + e.getLocalizedMessage());
+                System.err.println("Exception running crawler thread " + i + " of " + threads + ": " + e.getLocalizedMessage());
                 e.printStackTrace();
             }
         }
+        return totalLinks;
     }
 
     private final Navigator navigator;
+    private final RoomService roomService;
 
-    public Crawler(Navigator navigator) {
-        this.navigator = navigator;
+    public Crawler(SessionFactory sessionFactory, RoomService roomService) {
+        this.navigator = new Navigator(sessionFactory.createSession());
+        this.roomService = roomService;
     }
 
     @Override
     public Integer call() {
         Room room = navigator.currentRoom();
-        Route route;
         Integer links = 0;
-        while ((route = room.findNearestUnexplored()) != null) {
-            try {
-                Link lastStep = navigator.traverse(route);
-                room = room.link(lastStep.exit(), lastStep.to());
-                links++;
-            } catch (LinkAlreadyExistsException ex) {
-                // Another crawler must have followed this exit first.
-                // Go back to previous room and look for another unexplored room.
-                navigator.traverse(route.head());
+        while (true) {
+            try (Transaction tx = roomService.beginTransaction()) {
+                System.err.println("At " + room);
+                tx.acquireLock(room, false);
+                Route route = room.findNearestUnexplored();
+                tx.acquireLock(route, false);
+                if (route == null) {
+                    break;
+                }
+                try {
+                    Link lastStep = navigator.traverse(route);
+                    tx.acquireLock(lastStep, true);
+                    Room from = lastStep.getFrom();
+                    room = from.link(lastStep.getExit(), lastStep.getTo()).getTo();
+                    links++;
+                    tx.success();
+                } catch (LinkAlreadyExistsException ex) {
+                    // Another crawler must have followed this exit first.
+                    // Go back to previous room and look for another unexplored room.
+                    navigator.traverse(route.head());
+                }
             }
         }
         return links;

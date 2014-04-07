@@ -16,24 +16,20 @@ public class Route implements Iterable<Link> {
         this.path = new ArrayList<>(path);
     }
 
-    public List<Link> getPath() {
-        return Collections.unmodifiableList(path);
-    }
-
     public Route head() {
-        return new Route(path.subList(0, path.size() - 1));
+        return size() > 1 ? new Route(path.subList(0, path.size() - 1)) : new Route(Collections.<Link>emptyList());
     }
 
     public Route tail() {
-        return new Route(path.subList(1, path.size()));
+        return size() > 1 ? new Route(path.subList(1, path.size())) : new Route(Collections.<Link>emptyList());
     }
 
     public Link first() {
-        return path.get(0);
+        return size() > 0 ? path.get(0) : null;
     }
 
     public Link last() {
-        return path.get(path.size() - 1);
+        return size() > 0 ? path.get(size() - 1) : null;
     }
 
     public int size() {

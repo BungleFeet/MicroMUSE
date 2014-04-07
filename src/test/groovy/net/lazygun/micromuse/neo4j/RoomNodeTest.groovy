@@ -1,16 +1,11 @@
 package net.lazygun.micromuse.neo4j
 
 import net.lazygun.micromuse.RoomImpl
+import net.lazygun.micromuse.TestUtils
 import org.neo4j.graphdb.*
-import org.neo4j.graphdb.traversal.Evaluators
-import org.neo4j.graphdb.traversal.TraversalDescription
-import org.neo4j.graphdb.traversal.Uniqueness
 import org.neo4j.test.TestGraphDatabaseFactory
-import org.neo4j.tooling.GlobalGraphOperations
 import spock.lang.Specification
 
-import static net.lazygun.micromuse.neo4j.RoomNode.ROOM
-import static net.lazygun.micromuse.neo4j.RoomNode.Relation.EXIT
 import static org.neo4j.graphdb.Direction.INCOMING
 import static org.neo4j.graphdb.Direction.OUTGOING
 
@@ -20,9 +15,7 @@ import static org.neo4j.graphdb.Direction.OUTGOING
 class RoomNodeTest extends Specification {
 
   GraphDatabaseService db
-  GlobalGraphOperations globalGraphOperations
-  Transaction tx
-  TraversalDescription traverser
+  GraphTransaction tx
 
   def "replace unexplored room with regular room"() {
     given: 'a home room and a new room to be saved'
@@ -136,9 +129,9 @@ class RoomNodeTest extends Specification {
     then: 'we get a route with one step, from room A to the unexplored room C'
       route.size() == 1
       def step = route[0]
-      step.from() == roomA
-      step.exit() == "C"
-      step.to() == roomA.exit("C")
+      step.from == roomA
+      step.exit == "C"
+      step.to == roomA.exit("C")
   }
 
   def "can find nearest unexplored to room with no unexplored exits"() {
@@ -155,13 +148,13 @@ class RoomNodeTest extends Specification {
     then: 'we get a route with two steps, from A to B to the unexplored room D'
       route.size() == 2
       def step1 = route[0]
-      step1.from() == roomA
-      step1.exit() == "B"
-      step1.to() == roomA.exit("B")
+      step1.from == roomA
+      step1.exit == "B"
+      step1.to == roomA.exit("B")
       def step2 = route[1]
-      step2.from() == roomB
-      step2.exit() == "D"
-      step2.to() == roomB.exit("D")
+      step2.from == roomB
+      step2.exit == "D"
+      step2.to == roomB.exit("D")
   }
 
   def "full route to nearest unexplored room is given when no rooms are teleportable"() {
@@ -178,66 +171,32 @@ class RoomNodeTest extends Specification {
     then: 'we get a route with three steps, from A to B to C to unexplored room D'
       route.size() == 3
       def step1 = route[0]
-      step1.from() == roomA
-      step1.exit() == "B"
-      step1.to() == roomA.exit("B")
+      step1.from == roomA
+      step1.exit == "B"
+      step1.to == roomA.exit("B")
       def step2 = route[1]
-      step2.from() == roomB
-      step2.exit() == "C"
-      step2.to() == roomB.exit("C")
+      step2.from == roomB
+      step2.exit == "C"
+      step2.to == roomB.exit("C")
       def step3 = route[2]
-      step3.from() == roomC
-      step3.exit() == "D"
-      step3.to() == roomC.exit("D")
+      step3.from == roomC
+      step3.exit == "D"
+      step3.to == roomC.exit("D")
   }
 
   def setupSpec() {
-    PropertyContainer.metaClass  {
-      propertyMissing { String name -> delegate.getProperty(name)}
-      propertyMissing { String name, val -> delegate.setProperty(name, val)}
-    }
+    TestUtils.decoratePropertyContainer()
   }
 
   def setup() {
     db = new TestGraphDatabaseFactory().newImpermanentDatabase()
     RoomNode.initialise(db)
-    globalGraphOperations = GlobalGraphOperations.at(db)
     tx = db.beginTx()
-    createLinksTraversalDescription()
   }
 
   def cleanup() {
-    printMap("\nMap after test:")
+    TestUtils.printMap(db, "\nMap after test:")
     tx.close()
     db.shutdown()
-  }
-
-  void createLinksTraversalDescription() {
-    traverser = db.traversalDescription()
-      .breadthFirst()
-      .relationships(EXIT, OUTGOING)
-      .uniqueness(Uniqueness.NODE_PATH)
-      .evaluator(Evaluators.includingDepths(1, 1))
-  }
-
-  void printMap(title, includeLabels = false) {
-    println(title)
-    traverser
-      .traverse(GlobalGraphOperations.at(db).getAllNodesWithLabel(ROOM).iterator().toList().toArray() as Node[])
-      .iterator().toList().each { p ->
-        p.each { PropertyContainer e ->
-          switch (e) {
-            case Node:
-              includeLabels ?
-                print("($e.name {${e.getLabels().join(',')}})") :
-                print("($e.name)")
-              break
-            case Relationship:
-              print "-[$e.name]->"
-          }
-        }
-        println ""
-      }
-    println ""
   }
 }

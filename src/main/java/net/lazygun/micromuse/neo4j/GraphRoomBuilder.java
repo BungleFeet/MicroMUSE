@@ -59,4 +59,13 @@ public class GraphRoomBuilder implements RoomBuilder {
         }
         return RoomNode.create(name, location, description, exits);
     }
+
+    @Override
+    public RoomBuilder copy(Room room) {
+        List<String> roomExits = room.getExits();
+        return name(room.getName())
+                .location(room.getLocation())
+                .description(room.getDescription())
+                .exits(roomExits.toArray(new String[roomExits.size()]));
+    }
 }

@@ -7,5 +7,7 @@ package net.lazygun.micromuse;
 public interface RoomService {
     public RoomBuilder builder();
 
-    public Room findByLocation(String location);
+    public Room findOrCreate(Room room);
+
+    public Transaction beginTransaction();
 }

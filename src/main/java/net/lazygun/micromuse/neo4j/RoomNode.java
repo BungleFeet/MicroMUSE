@@ -152,15 +152,17 @@ public class RoomNode implements Room, Node {
     }
 
     @Override
-    public RoomNode link(String exit, Room to) {
-        if (!getExits().contains(exit)) {
-            throw new IllegalArgumentException("Room has no exit name '" + exit + "'");
-        }
+    public Link link(String exit, Room to) {
+        Link link = new Link(this, exit, to);
+        //System.out.println("Creating " + link);
 
-        System.out.println("Creating link (" + getName() + ")-[" + exit + "]->(" + to.getName() + ")");
+        if (!getExits().contains(exit)) {
+            throw new IllegalArgumentException(toString() + " has no exit '" + exit + "'");
+        }
 
         // Now get the saved RoomNode on the other side of the exit
         RoomNode persistedTo = exit(exit);
+        link = new Link(this, exit, persistedTo);
 
         // If the to Node represents an unexplored room, we replace it with the room on the TO side of the given link
         if (persistedTo.hasLabel(UNEXPLORED)) {
@@ -170,12 +172,12 @@ public class RoomNode implements Room, Node {
                 persistedTo = create(to.getName(), to.getLocation(), to.getDescription(), to.getExits());
             }
             createExitRelationship(this, persistedTo, exit);
-            return persistedTo;
+            return new Link(this, exit, persistedTo);
         }
 
         // Otherwise, the link already exists
         else {
-            throw new LinkAlreadyExistsException(new Link(this, exit, persistedTo));
+            throw new LinkAlreadyExistsException(link);
         }
     }
 
@@ -214,14 +216,23 @@ public class RoomNode implements Room, Node {
         TraversalDescription finder = createUnexploredRoomNodeFinder();
         ResourceIterable<Path> unexploredNodePaths = finder.traverse(this);
         Path shortestPath = null;
-        for (Path path : unexploredNodePaths) {
-            if (path.length() == 1) {
-                    return pathToRoute(path);
-                } else if (shortestPath == null || path.length() < shortestPath.length()) {
-                    shortestPath = path;
+        while (true) {
+            int retries = 10;
+            try {
+                for (Path path : unexploredNodePaths) {
+                    if (path.length() == 1) {
+                        return pathToRoute(path);
+                    } else if (shortestPath == null || path.length() < shortestPath.length()) {
+                        shortestPath = path;
+                    }
+                }
+                return pathToRoute(shortestPath);
+            } catch (NotFoundException ex) {
+                if (--retries == 0) {
+                    throw ex;
                 }
             }
-            return pathToRoute(shortestPath);
+        }
     }
 
     @Override
@@ -234,8 +245,12 @@ public class RoomNode implements Room, Node {
 
     @Override
     public String toString() {
-        return "RoomNode{name=" + getName() + ",location=" + getLocation() + ",exits=[" +
-               Arrays.toString(getExits().toArray()) + "],node=" + node + "}";
+        return "RoomNode{name=" + getName() + ",location=" + getLocation() + ",exits=" +
+               Arrays.toString(getExits().toArray()) + ",node=" + node + "}";
+    }
+
+    public List<Relationship> getExitRelationships() {
+        return HelperUtils.iterableToList(getRelationships(EXIT, OUTGOING));
     }
 
     private Relationship exitRelationship(String exit) {

@@ -18,15 +18,20 @@ public class Link {
         this.to = to;
     }
 
-    public Room from() {
+    public Room getFrom() {
         return from;
     }
 
-    public String exit() {
+    public String getExit() {
         return exit;
     }
 
-    public Room to() {
+    public Room getTo() {
         return to;
+    }
+
+    @Override
+    public String toString() {
+        return "Link{(" + from.getName() + ")-[" + exit + "]->(" + to.getName() + ")}";
     }
 }

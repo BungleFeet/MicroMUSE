@@ -24,7 +24,7 @@ public interface Room {
 
     public boolean isUnexplored();
 
-    public Room link(String exit, Room to);
+    public Link link(String exit, Room to);
 
     public Route findNearestUnexplored();
 
