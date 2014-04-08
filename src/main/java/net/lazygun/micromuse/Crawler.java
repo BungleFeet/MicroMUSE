@@ -1,7 +1,5 @@
 package net.lazygun.micromuse;
 
-import net.lazygun.micromuse.neo4j.GraphRoomService;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
@@ -54,28 +52,29 @@ public class Crawler implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        Room room = navigator.currentRoom();
         Integer links = 0;
         while (true) {
+            Room room = navigator.currentRoom();
             try (Transaction tx = roomService.beginTransaction()) {
-                System.err.println("At " + room);
-                tx.acquireLock(room, false);
-                Route route = room.findNearestUnexplored();
-                tx.acquireLock(route, false);
-                if (route == null) {
-                    break;
-                }
                 try {
+                    Route route = room.findNearestUnexplored();
+                    if (route == null) {
+                        break;
+                    }
+                    System.err.println(Thread.currentThread().getName() + " exploring " + route.last().getTo());
                     Link lastStep = navigator.traverse(route);
-                    tx.acquireLock(lastStep, true);
                     Room from = lastStep.getFrom();
-                    room = from.link(lastStep.getExit(), lastStep.getTo()).getTo();
+                    from.link(lastStep.getExit(), lastStep.getTo()).getTo();
                     links++;
                     tx.success();
-                } catch (LinkAlreadyExistsException ex) {
-                    // Another crawler must have followed this exit first.
-                    // Go back to previous room and look for another unexplored room.
-                    navigator.traverse(route.head());
+                } catch (TraversalException ex) {
+                    // Another crawler must be operating on this route,
+                    // so we just try again.
+                    System.err.println(ex.getLocalizedMessage());
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException ignored) {
+                    }
                 }
             }
         }

@@ -1,15 +1,18 @@
 package net.lazygun.micromuse.neo4j;
 
-import net.lazygun.micromuse.Link;
-import net.lazygun.micromuse.LinkAlreadyExistsException;
-import net.lazygun.micromuse.Room;
-import net.lazygun.micromuse.Route;
+import net.lazygun.micromuse.*;
+import org.neo4j.cypher.javacompat.ExecutionEngine;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.Evaluation;
 import org.neo4j.graphdb.traversal.Evaluator;
 import org.neo4j.graphdb.traversal.TraversalDescription;
 import org.neo4j.graphdb.traversal.Uniqueness;
+import org.neo4j.kernel.DeadlockDetectedException;
 
+import java.math.BigInteger;
+import java.nio.charset.Charset;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 import static net.lazygun.micromuse.neo4j.RoomNode.Relation.EXIT;
@@ -25,7 +28,7 @@ public class RoomNode implements Room, Node {
     private static final String NAME = "name";
     private static final String DESCRIPTION = "description";
     private static final String LOCATION = "location";
-    private static final String EXITS = "exits";
+    public static final String FINGERPRINT = "fingerprint";
 
     public static final Label ROOM = new Label() {
         @Override
@@ -33,29 +36,42 @@ public class RoomNode implements Room, Node {
             return "ROOM";
         }
     };
-    public static final Label UNEXPLORED = new Label() {
+    private static final Label UNEXPLORED = new Label() {
         @Override
         public String name() {
             return "UNEXPLORED";
         }
     };
-    public static final Label TELEPORTABLE = new Label() {
+    private static final Label TELEPORTABLE = new Label() {
         @Override
         public String name() {
             return "TELEPORTABLE";
         }
     };
 
+    private static final Charset UTF8 = Charset.forName("UTF-8");
+
     private static GraphDatabaseService db;
+    private static ExecutionEngine engine;
 
     private final Node node;
 
+    private final String name;
+    private final String location;
+    private final String description;
+    private final List<String> exits;
+
     private RoomNode(Node node) {
         this.node = node;
+        name = (String) node.getProperty(NAME);
+        location = (String) node.getProperty(LOCATION, null);
+        description = (String) node.getProperty(DESCRIPTION);
+        exits = getExitRelationNames(node);
     }
 
     static void initialise(GraphDatabaseService db) {
         RoomNode.db = db;
+        engine = new ExecutionEngine(db);
     }
 
     private static void checkInitialised() {
@@ -66,32 +82,37 @@ public class RoomNode implements Room, Node {
 
     public static RoomNode findById(long id) {
         checkInitialised();
-        return new RoomNode(db.getNodeById(id));
+        try {
+            return new RoomNode(db.getNodeById(id));
+        } catch (NotFoundException | DeadlockDetectedException e) {
+            return null;
+        }
     }
 
     public static RoomNode findByLocation(String location) {
         checkInitialised();
-        List<Node> matches = HelperUtils.iterableToList(db.findNodesByLabelAndProperty(TELEPORTABLE, "location", location));
-        switch (matches.size()) {
-            case 0:
-                return null;
-            case 1:
-                return new RoomNode(matches.get(0));
-            default:
-                throw new IllegalStateException("Found more than one Node with location " + location);
+        RoomNode room = null;
+        for (Node match : db.findNodesByLabelAndProperty(TELEPORTABLE, "location", location)) {
+            if (room == null) try {
+                room = new RoomNode(match);
+            } catch (NotFoundException | DeadlockDetectedException ignored) {
+            }
+            else throw new IllegalStateException("Found more than one Node with location " + location);
         }
+        return room;
     }
 
     public static List<RoomNode> findAllByNameAndExits(String name, List<String> exits) {
         checkInitialised();
         List<RoomNode> matches = new ArrayList<>();
-        List<Node> potentialMatches = HelperUtils.iterableToList(
-                db.findNodesByLabelAndProperty(ROOM, "name", name)
-        );
-        for (Node potentialMatch : potentialMatches) {
-            List<String> nodeExits = HelperUtils.getExits(potentialMatch);
-            if (nodeExits.equals(exits)) {
+        for (Node potentialMatch : db.findNodesByLabelAndProperty(ROOM, "name", name)) {
+            List<String> exitsCopy = new ArrayList<>(exits);
+            for (Relationship exit : potentialMatch.getRelationships(EXIT, OUTGOING)) {
+                if (!exitsCopy.remove(exit.getProperty(NAME).toString())) break;
+            }
+            if (exits.size() == 0) try {
                 matches.add(new RoomNode(potentialMatch));
+            } catch (NotFoundException | DeadlockDetectedException ignored) {
             }
         }
         return matches;
@@ -110,19 +131,49 @@ public class RoomNode implements Room, Node {
 
     public static RoomNode create(String name, String location, String description, List<String> exits) {
         checkInitialised();
-        Node node = db.createNode(getLabels(name, location));
-        node.setProperty(NAME, name);
-        if (location != null) {
-            node.setProperty(LOCATION, location);
+        if (name == null) throw new NullPointerException();
+        if (description == null) description = "";
+        if (exits == null) exits = Collections.emptyList();
+
+        Map<String, Object> props = new HashMap<>();
+        props.put(NAME, name);
+        if (location != null) props.put(LOCATION, location);
+        props.put(DESCRIPTION, description);
+        props.put(FINGERPRINT, createFingerPrint(name, location, exits));
+
+        StringBuilder query = new StringBuilder("MERGE (n");
+        for (Label label : getLabels(name, location)) query.append(":").append(label.name());
+        query.append(" {");
+        for (String prop : props.keySet()) {
+            if (props.get(prop) != null) query.append(prop).append(": {props}.").append(prop).append(",");
         }
-        node.setProperty(DESCRIPTION, description);
-        if (exits != null) {
+        query.deleteCharAt(query.length()-1).append("}) RETURN n");
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("props", props);
+        Node node = (Node) engine.execute(query.toString(), params).columnAs("n").next();
+
+        if (!node.hasRelationship()) {
             for (String exit : exits) {
                 RoomNode unexplored = create(UNEXPLORED.name(), null, "", null);
                 createExitRelationship(node, unexplored, exit);
             }
         }
         return new RoomNode(node);
+    }
+
+    private static String createFingerPrint(String name, String location, Collection<String> exits) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("MD5");
+            digest.update((name.equals(UNEXPLORED.name()) ? UUID.randomUUID().toString() : name).getBytes(UTF8));
+            if (location != null) digest.update(location.getBytes(UTF8));
+            List<String> exitList = new ArrayList<>(exits);
+            Collections.sort(exitList);
+            for (String exit : exits) digest.update(exit.getBytes(UTF8));
+            return new BigInteger(1, digest.digest()).toString(16);
+        } catch (NoSuchAlgorithmException e) {
+            throw new Error(e);
+        }
     }
 
     private static Relationship createExitRelationship(Node from, Node to, String name) {
@@ -152,11 +203,11 @@ public class RoomNode implements Room, Node {
     }
 
     @Override
-    public Link link(String exit, Room to) {
+    public Link link(String exit, Room to) throws TraversalException {
         Link link = new Link(this, exit, to);
         //System.out.println("Creating " + link);
 
-        if (!getExits().contains(exit)) {
+        if (!exits.contains(exit)) {
             throw new IllegalArgumentException(toString() + " has no exit '" + exit + "'");
         }
 
@@ -166,13 +217,17 @@ public class RoomNode implements Room, Node {
 
         // If the to Node represents an unexplored room, we replace it with the room on the TO side of the given link
         if (persistedTo.hasLabel(UNEXPLORED)) {
-            persistedTo.delete();
-            persistedTo = findByExample(to);
-            if (persistedTo == null) {
-                persistedTo = create(to.getName(), to.getLocation(), to.getDescription(), to.getExits());
+            try {
+                persistedTo.delete();
+                persistedTo = findByExample(to);
+                if (persistedTo == null) {
+                    persistedTo = create(to.getName(), to.getLocation(), to.getDescription(), to.getExits());
+                }
+                createExitRelationship(this, persistedTo, exit);
+                return new Link(this, exit, persistedTo);
+            } catch (NotFoundException | DeadlockDetectedException ex) {
+                throw new TraversalException(ex);
             }
-            createExitRelationship(this, persistedTo, exit);
-            return new Link(this, exit, persistedTo);
         }
 
         // Otherwise, the link already exists
@@ -183,74 +238,69 @@ public class RoomNode implements Room, Node {
 
     @Override
     public String getName() {
-        return (String) getProperty(NAME);
+        return name;
     }
 
     @Override
     public String getLocation() {
-        return (String) getProperty(LOCATION, null);
+        return location;
     }
 
     @Override
     public String getDescription() {
-        return (String) getProperty(DESCRIPTION);
+        return description;
     }
 
     @Override
     public List<String> getExits() {
-        return getExitRelationNames(this);
+        return Collections.unmodifiableList(exits);
     }
 
     @Override
     public boolean isTeleportable() {
-        return getLocation() != null;
+        return hasLabel(TELEPORTABLE);
     }
 
     @Override
     public boolean isUnexplored() {
-        return getName().equals(UNEXPLORED.name());
+        return hasLabel(UNEXPLORED);
     }
 
     @Override
-    public Route findNearestUnexplored() {
-        TraversalDescription finder = createUnexploredRoomNodeFinder();
-        ResourceIterable<Path> unexploredNodePaths = finder.traverse(this);
-        Path shortestPath = null;
-        while (true) {
-            int retries = 10;
-            try {
-                for (Path path : unexploredNodePaths) {
-                    if (path.length() == 1) {
-                        return pathToRoute(path);
-                    } else if (shortestPath == null || path.length() < shortestPath.length()) {
-                        shortestPath = path;
-                    }
-                }
-                return pathToRoute(shortestPath);
-            } catch (NotFoundException ex) {
-                if (--retries == 0) {
-                    throw ex;
+    public Route findNearestUnexplored() throws TraversalException {
+        try {
+            TraversalDescription finder = createUnexploredRoomNodeFinder();
+            ResourceIterable<Path> unexploredNodePaths = finder.traverse(this);
+            Path shortestPath = null;
+            for (Path path : unexploredNodePaths) {
+                if (path.length() == 1) {
+                    return pathToRoute(path);
+                } else if (shortestPath == null || path.length() < shortestPath.length()) {
+                    shortestPath = path;
                 }
             }
+            return pathToRoute(shortestPath);
+        } catch (NotFoundException | DeadlockDetectedException ex) {
+            throw new TraversalException(ex);
         }
     }
 
     @Override
-    public RoomNode exit(String exit) {
-        if (!getExits().contains(exit)) {
+    public RoomNode exit(String exit) throws TraversalException {
+        if (!exits.contains(exit)) {
             throw new IllegalArgumentException("Room has no exit name '" + exit + "'");
         }
-        return new RoomNode(exitRelationship(exit).getEndNode());
+        try {
+            return new RoomNode(exitRelationship(exit).getEndNode());
+        } catch (NotFoundException | DeadlockDetectedException e) {
+            throw new TraversalException(e);
+        }
     }
 
     @Override
     public String toString() {
         return "RoomNode{name=" + getName() + ",location=" + getLocation() + ",exits=" +
                Arrays.toString(getExits().toArray()) + ",node=" + node + "}";
-    }
-
-    public List<Relationship> getExitRelationships() {
-        return HelperUtils.iterableToList(getRelationships(EXIT, OUTGOING));
     }
 
     private Relationship exitRelationship(String exit) {

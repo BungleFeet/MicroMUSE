@@ -6,15 +6,11 @@ package net.lazygun.micromuse;
  *
  * @author Ewan
  */
-public class LinkAlreadyExistsException extends RuntimeException {
+public class LinkAlreadyExistsException extends TraversalException {
     private final Link link;
 
     public LinkAlreadyExistsException(Link link) {
-        this.link = link;
-    }
-
-    public LinkAlreadyExistsException(String message, Link link) {
-        super(message);
+        super("Link already exists: " + link);
         this.link = link;
     }
 

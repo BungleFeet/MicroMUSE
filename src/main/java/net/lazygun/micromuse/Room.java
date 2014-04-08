@@ -24,9 +24,9 @@ public interface Room {
 
     public boolean isUnexplored();
 
-    public Link link(String exit, Room to);
+    public Link link(String exit, Room to) throws TraversalException;
 
-    public Route findNearestUnexplored();
+    public Route findNearestUnexplored() throws TraversalException;
 
-    public Room exit(String exit);
+    public Room exit(String exit) throws TraversalException;
 }

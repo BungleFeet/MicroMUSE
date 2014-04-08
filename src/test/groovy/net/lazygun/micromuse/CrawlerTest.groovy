@@ -64,7 +64,7 @@ class CrawlerTest extends Specification {
       linksCreated == links.size()
 
     where:
-      crawlers = 1
+      crawlers = 5
   }
 
   def setupSpec() {
@@ -74,7 +74,7 @@ class CrawlerTest extends Specification {
   def setup() {
     db = new TestGraphDatabaseFactory().newImpermanentDatabase()
     ops = GlobalGraphOperations.at(db)
-    createMap(4, 5)
+    createMap(10, 4)
     //links.each { println it }
   }
 

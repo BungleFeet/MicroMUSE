@@ -1,5 +1,6 @@
 package net.lazygun.micromuse
 
+import org.neo4j.graphdb.GraphDatabaseService
 import org.neo4j.graphdb.PropertyContainer
 import org.neo4j.graphdb.Relationship
 import org.neo4j.graphdb.traversal.Evaluators
@@ -24,7 +25,7 @@ class TestUtils {
     }
   }
 
-  static void printMap(db, title, includeLabels = false) {
+  static void printMap(GraphDatabaseService db, title, includeLabels = false) {
     println(title)
     db.traversalDescription()
       .breadthFirst()

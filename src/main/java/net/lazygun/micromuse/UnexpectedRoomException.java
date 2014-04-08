@@ -6,7 +6,7 @@ package net.lazygun.micromuse;
  *
  * @author Ewan
  */
-public class UnexpectedRoomException extends RuntimeException {
+public class UnexpectedRoomException extends TraversalException {
 
     private final Room expected;
     private final Room actual;

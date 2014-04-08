@@ -46,11 +46,15 @@ public class MapSession implements Session {
     }
 
     @Override
-    public Room exit(String exit) {
+    public Room exit(String exit) throws TraversalException {
         if (currentRoom.getExits().contains(exit)) {
             for (Link link : links) {
                 if (link.getFrom().getName().equals(currentRoom.getName()) && link.getExit().equals(exit)) {
-                    currentRoom = roomService.findOrCreate(link.getTo());
+                    try {
+                        currentRoom = roomService.findOrCreate(link.getTo());
+                    } catch (Exception e) {
+                        throw new TraversalException(e);
+                    }
                     return currentRoom;
                 }
             }

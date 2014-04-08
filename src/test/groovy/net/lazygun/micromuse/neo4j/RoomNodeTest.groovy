@@ -15,7 +15,7 @@ import static org.neo4j.graphdb.Direction.OUTGOING
 class RoomNodeTest extends Specification {
 
   GraphDatabaseService db
-  GraphTransaction tx
+  Transaction tx
 
   def "replace unexplored room with regular room"() {
     given: 'a home room and a new room to be saved'
@@ -23,7 +23,7 @@ class RoomNodeTest extends Specification {
       def room = new RoomImpl("Room A", null, "Test room A", ['A', 'B', 'C'])
 
     when: 'the new room is linked to from the home room via the first exit'
-      room = home.link("A", room)
+      room = home.link("A", room).to
 
     then: 'the new room has been saved'
       room.id != null
@@ -44,10 +44,10 @@ class RoomNodeTest extends Specification {
   def "create a link back to home room"() {
     given: 'a new room, linked to the home room from its first exit'
       def home = RoomNode.create("home", null, "", ["A"])
-      def room = home.link("A", new RoomImpl("Room A", null, "Test room A", ['H', 'B', 'C']))
+      def room = home.link("A", new RoomImpl("Room A", null, "Test room A", ['H', 'B', 'C'])).to
 
     when: 'the new room is linked back to the home room via exit "1"'
-      def linkedHome = room.link('H', new RoomImpl(home.name, home.description, home.description, home.exits))
+      def linkedHome = room.link('H', new RoomImpl(home.name, home.description, home.description, home.exits)).to
 
     then: 'the new link connects back to home'
       linkedHome == home

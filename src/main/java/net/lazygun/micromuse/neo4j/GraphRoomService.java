@@ -7,6 +7,9 @@ import net.lazygun.micromuse.Transaction;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.factory.GraphDatabaseFactory;
 
+import static net.lazygun.micromuse.neo4j.RoomNode.FINGERPRINT;
+import static net.lazygun.micromuse.neo4j.RoomNode.ROOM;
+
 /**
  *
  * @author Ewan
@@ -18,17 +21,20 @@ public class GraphRoomService implements RoomService {
     public GraphRoomService(GraphDatabaseService db) {
         this.db = db;
         RoomNode.initialise(db);
+        try (org.neo4j.graphdb.Transaction tx = db.beginTx()) {
+            db.schema().constraintFor(ROOM).assertPropertyIsUnique(FINGERPRINT).create();
+            tx.success();
+        }
     }
 
     public GraphRoomService(String dbPath) {
-        db = new GraphDatabaseFactory().newEmbeddedDatabase(dbPath);
+        this(new GraphDatabaseFactory().newEmbeddedDatabase(dbPath));
         Runtime.getRuntime().addShutdownHook(new Thread() {
             @Override
             public void run() {
                 db.shutdown();
             }
         });
-        RoomNode.initialise(db);
     }
 
     @Override
@@ -38,11 +44,16 @@ public class GraphRoomService implements RoomService {
 
     @Override
     public Room findOrCreate(Room room) {
-        Room persisted = RoomNode.findByExample(room);
-        if (persisted == null) {
-            persisted = RoomNode.create(room.getName(), room.getLocation(), room.getDescription(), room.getExits());
+        while (true) {
+            try {
+                Room persisted = RoomNode.findByExample(room);
+                if (persisted == null) {
+                    persisted = RoomNode.create(room.getName(), room.getLocation(), room.getDescription(), room.getExits());
+                }
+                return persisted;
+            } catch (NotFoundException ignored) {
+            }
         }
-        return persisted;
     }
 
     @Override

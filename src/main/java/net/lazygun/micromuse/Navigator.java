@@ -1,8 +1,6 @@
 package net.lazygun.micromuse;
 
 /**
- * TODO: Write Javadocs for this class.
- * Created: 24/03/2014 14:22
  *
  * @author Ewan
  */
@@ -18,16 +16,12 @@ public class Navigator {
         return session.getCurrentRoom();
     }
 
-    Link traverse(Route route) {
+    Link traverse(Route route) throws TraversalException {
         if (route.last().getTo().isTeleportable()) {
             session.teleport(route.last().getTo().getLocation());
             return route.last();
         }
-        if (countTeleportableRooms(route) > 0) {
-            while (!route.first().getFrom().isTeleportable() || countTeleportableRooms(route) > 1) {
-                route = route.tail();
-            }
-        }
+        route = optimiseRoute(route);
         Link first = route.first();
         if (!first.getFrom().equals(currentRoom())) {
             if (!first.getFrom().isTeleportable()) {
@@ -42,6 +36,15 @@ public class Navigator {
         return last;
     }
 
+    private Route optimiseRoute(Route route) {
+        if (countTeleportableRooms(route) > 0) {
+            while (!route.first().getFrom().isTeleportable() || countTeleportableRooms(route) > 1) {
+                route = route.tail();
+            }
+        }
+        return route;
+    }
+
     private int countTeleportableRooms(Route route) {
         int count = 0;
         for (Link link : route) {
@@ -52,7 +55,7 @@ public class Navigator {
         return count;
     }
 
-    private Link follow(Link link) {
+    private Link follow(Link link) throws TraversalException {
         Room currentRoom = currentRoom();
         if (!currentRoom.equals(link.getFrom())) {
             throw new UnexpectedRoomException("Room trying to exit is not the same as Link from Room", link.getFrom(), currentRoom);

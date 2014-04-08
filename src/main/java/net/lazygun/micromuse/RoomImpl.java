@@ -10,7 +10,7 @@ import java.util.*;
  */
 public class RoomImpl implements Room {
 
-    public static final RoomImpl UNEXPLORED = new RoomImpl("UNEXPLORED", null, "");
+    private static final RoomImpl UNEXPLORED = new RoomImpl("UNEXPLORED", null, "");
 
     private final long id;
     private final String name;

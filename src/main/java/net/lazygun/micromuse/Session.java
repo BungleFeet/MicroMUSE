@@ -15,5 +15,5 @@ public interface Session extends Closeable {
 
     Room getCurrentRoom();
     Room teleport(String location);
-    Room exit(String exit);
+    Room exit(String exit) throws TraversalException;
 }
